@@ -334,10 +334,8 @@ footer { text-align: center; padding: 20px; color: var(--text-muted); font-size:
       </select>
     </div>
     <div class="settings-row">
-      <label class="field-label">Backend API URL</label>
-      <input type="text" id="api-url-input" placeholder="https://your-backend.onrender.com">
-      <button class="btn btn-secondary" id="btn-save-api">Save</button>
-      <p class="muted" id="api-status"></p>
+      <label class="field-label">Backend Status</label>
+<p class="muted" id="api-status">Checking backend connection...</p>
     </div>
     <div class="settings-row">
       <p class="muted">The AI Assistant runs on your backend (free, via Groq) — nothing to configure here.</p>
@@ -856,15 +854,32 @@ document.getElementById("btn-stop-speak").addEventListener("click", () => {
 });
 
 /* ---------------------------- Settings ---------------------------- */
-document.getElementById("api-url-input").value = state.apiUrl;
+async function checkApiHealth() {
+  const statusEl = document.getElementById("api-status");
 
-document.getElementById("btn-save-api").addEventListener("click", () => {
-  const val = document.getElementById("api-url-input").value.trim().replace(/\/$/, "");
-  state.apiUrl = val;
-  localStorage.setItem("cd_api_url", val);
-  document.getElementById("api-status").textContent = "Saved. Checking connection…";
-  checkApiHealth();
-});
+  try {
+    const res = await fetch(`${state.apiUrl}/api/health`);
+
+    if (!res.ok) {
+      throw new Error("Backend error");
+    }
+
+    const data = await res.json();
+
+    statusEl.textContent =
+      `Connected ✓ | Model: ${
+        data.model_loaded ? "Ready" : "Unavailable"
+      } | Database: ${
+        data.database_connected ? "Connected" : "Unavailable"
+      }`;
+
+  } catch (error) {
+    statusEl.textContent = "Backend unavailable.";
+  }
+}
+
+checkApiHealth();
+loadHistory();
 
 async function checkApiHealth() {
   const statusEl = document.getElementById("api-status");
