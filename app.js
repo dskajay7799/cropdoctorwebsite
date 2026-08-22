@@ -1,554 +1,631 @@
-/* ==========================================================================
-   Crop Doctor — Frontend logic
-   Talks to the Flask backend (app.py) for real MobileNetV2 inference and
-   Neon-backed history. Falls back to browser localStorage for history if
-   the backend/database isn't reachable. Never fabricates a diagnosis.
-   ========================================================================== */
+"""
+Crop Doctor — Backend API
+==========================
+Flask API that serves the REAL Crop Doctor MobileNetV2 model
+(crop_doctor_model.tflite, 27 classes, PlantVillage-trained) and stores
+analysis history in a Neon (serverless Postgres) database.
 
-const DEFAULT_API_URL = "https://YOUR-BACKEND.onrender.com";
+Deploy target: Render (Web Service)
+Database:      Neon Postgres (set DATABASE_URL env var)
+Frontend:      Netlify (calls this API, set FRONTEND_ORIGIN env var for CORS)
 
-const state = {
-  apiUrl: localStorage.getItem("cd_api_url") || DEFAULT_API_URL,
-  ollamaUrl: localStorage.getItem("cd_ollama_url") || "",
-  selectedCrop: null,
-  selectedFile: null,
-  lastResult: null,
-  history: [],
-};
+Endpoints
+---------
+GET  /api/health              -> {"status": "ok", "model_loaded": true/false}
+POST /api/analyze             -> multipart/form-data: image=<file>, crop=<crop_id>
+                                  returns diagnosis JSON (never fakes a result)
+GET  /api/history             -> list of saved analyses (most recent first)
+POST /api/history             -> save an analysis record {crop, disease, confidence, severity, status}
+DELETE /api/history/<id>      -> delete one record
+DELETE /api/history           -> clear all history
 
-const ALL_CROPS = [
-  { id: "rice", label: "Rice", emoji: "🌾", model_supported: false },
-  { id: "wheat", label: "Wheat", emoji: "🌿", model_supported: false },
-  { id: "maize", label: "Maize", emoji: "🌽", model_supported: true },
-  { id: "tomato", label: "Tomato", emoji: "🍅", model_supported: true },
-  { id: "potato", label: "Potato", emoji: "🥔", model_supported: true },
-  { id: "apple", label: "Apple", emoji: "🍎", model_supported: true },
-  { id: "grape", label: "Grape", emoji: "🍇", model_supported: true },
-  { id: "pepper", label: "Pepper", emoji: "🌶️", model_supported: true },
-  { id: "soybean", label: "Soybean", emoji: "🫘", model_supported: false },
-  { id: "banana", label: "Banana", emoji: "🍌", model_supported: false },
-  { id: "mango", label: "Mango", emoji: "🥭", model_supported: false },
-  { id: "groundnut", label: "Groundnut", emoji: "🥜", model_supported: false },
-  { id: "onion", label: "Onion", emoji: "🧅", model_supported: false },
-];
+Nothing here invents an ML prediction. If the model file is missing or
+fails to load, /api/analyze returns a clear "model unavailable" error
+instead of a fabricated diagnosis.
+"""
 
-/* ---------------------------- Navigation ---------------------------- */
-function goto(tabName) {
-  document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-  document.getElementById(`tab-${tabName}`).classList.add("active");
-  const tabBtn = document.querySelector(`.tab[data-tab="${tabName}"]`);
-  if (tabBtn) tabBtn.classList.add("active");
-  document.getElementById("nav-tabs").classList.remove("open");
+import io
+import os
+import json
+import uuid
+import datetime
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from PIL import Image
+import numpy as np
+
+# ---------------------------------------------------------------------------
+# tflite runtime: prefer the lightweight tflite-runtime package (small,
+# Render-friendly). Fall back to full tensorflow if that's what's installed.
+# ---------------------------------------------------------------------------
+import tensorflow as tf
+
+Interpreter = tf.lite.Interpreter
+
+# ---------------------------------------------------------------------------
+# Optional Postgres (Neon) support. If DATABASE_URL isn't set, history
+# endpoints fall back to an in-memory list so the API still runs locally
+# without a database configured.
+# ---------------------------------------------------------------------------
+try:
+    import psycopg2
+    import psycopg2.extras
+except ImportError:  # pragma: no cover
+    psycopg2 = None
+
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "crop_doctor_model.tflite")
+DATABASE_URL = os.environ.get("DATABASE_URL")
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "*")
+
+app = Flask(__name__)
+CORS(app, resources={r"/api/*": {"origins": FRONTEND_ORIGIN}})
+
+# ---------------------------------------------------------------------------
+# Model labels — EXACT order used during training. Do not reorder.
+# ---------------------------------------------------------------------------
+LABELS = [
+    "Apple___Apple_scab",
+    "Apple___Black_rot",
+    "Apple___Cedar_apple_rust",
+    "Apple___healthy",
+    "Corn_(maize)___Cercospora_leaf_spot Gray_leaf_spot",
+    "Corn_(maize)___Common_rust_",
+    "Corn_(maize)___Northern_Leaf_Blight",
+    "Corn_(maize)___healthy",
+    "Grape___Black_rot",
+    "Grape___Esca_(Black_Measles)",
+    "Grape___Leaf_blight_(Isariopsis_Leaf_Spot)",
+    "Grape___healthy",
+    "Pepper,_bell___Bacterial_spot",
+    "Pepper,_bell___healthy",
+    "Potato___Early_blight",
+    "Potato___Late_blight",
+    "Potato___healthy",
+    "Tomato___Bacterial_spot",
+    "Tomato___Early_blight",
+    "Tomato___Late_blight",
+    "Tomato___Leaf_Mold",
+    "Tomato___Septoria_leaf_spot",
+    "Tomato___Spider_mites Two-spotted_spider_mite",
+    "Tomato___Target_Spot",
+    "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
+    "Tomato___Tomato_mosaic_virus",
+    "Tomato___healthy",
+]
+
+MODEL_CROP_TO_APP_CROP_ID = {
+    "Apple": "apple",
+    "Corn_(maize)": "maize",
+    "Grape": "grape",
+    "Pepper,_bell": "pepper",
+    "Potato": "potato",
+    "Tomato": "tomato",
 }
 
-document.querySelectorAll(".tab").forEach(btn => {
-  btn.addEventListener("click", () => goto(btn.dataset.tab));
-});
-document.querySelectorAll("[data-goto]").forEach(btn => {
-  btn.addEventListener("click", () => goto(btn.dataset.goto));
-});
-document.getElementById("menu-toggle").addEventListener("click", () => {
-  document.getElementById("nav-tabs").classList.toggle("open");
-});
+MODEL_SUPPORTED_CROP_IDS = {"apple", "maize", "grape", "pepper", "potato", "tomato"}
 
-/* ---------------------------- Crop selection ---------------------------- */
-function renderCropGrid() {
-  const grid = document.getElementById("crop-grid");
-  grid.innerHTML = "";
-  ALL_CROPS.forEach(crop => {
-    const tile = document.createElement("div");
-    tile.className = "crop-tile" + (crop.model_supported ? "" : " unsupported");
-    tile.innerHTML = `<span class="emoji">${crop.emoji}</span>${crop.label}` +
-      (crop.model_supported ? "" : `<span class="badge">Coming soon</span>`);
-    tile.addEventListener("click", () => {
-      document.querySelectorAll(".crop-tile").forEach(t => t.classList.remove("selected"));
-      tile.classList.add("selected");
-      state.selectedCrop = crop.id;
-      updateAnalyzeButton();
-    });
-    grid.appendChild(tile);
-  });
+# All crops shown in the UI. Crops with model_supported=False are still
+# selectable (per product spec) but diagnosis is refused honestly instead
+# of being faked, since the installed model has no classes for them.
+ALL_CROPS = [
+    {"id": "rice", "label": "Rice", "emoji": "🌾", "model_supported": False},
+    {"id": "wheat", "label": "Wheat", "emoji": "🌿", "model_supported": False},
+    {"id": "maize", "label": "Maize / Corn", "emoji": "🌽", "model_supported": True},
+    {"id": "tomato", "label": "Tomato", "emoji": "🍅", "model_supported": True},
+    {"id": "potato", "label": "Potato", "emoji": "🥔", "model_supported": True},
+    {"id": "apple", "label": "Apple", "emoji": "🍎", "model_supported": True},
+    {"id": "grape", "label": "Grape", "emoji": "🍇", "model_supported": True},
+    {"id": "pepper", "label": "Pepper", "emoji": "🌶️", "model_supported": True},
+    {"id": "soybean", "label": "Soybean", "emoji": "🫘", "model_supported": False},
+    {"id": "banana", "label": "Banana", "emoji": "🍌", "model_supported": False},
+    {"id": "mango", "label": "Mango", "emoji": "🥭", "model_supported": False},
+    {"id": "groundnut", "label": "Groundnut", "emoji": "🥜", "model_supported": False},
+    {"id": "onion", "label": "Onion", "emoji": "🧅", "model_supported": False},
+]
+
+# ---------------------------------------------------------------------------
+# Curated, verified disease knowledge base (ported from the Flutter app's
+# disease_knowledge_base.dart). Keyed by (raw model crop segment, disease).
+# ---------------------------------------------------------------------------
+KNOWLEDGE_BASE = {
+    ("Apple", "Apple_scab"): dict(
+        symptoms=["Olive-green to dark brown velvety spots on leaves",
+                   "Corky, scab-like lesions on fruit skin",
+                   "Premature leaf yellowing and drop"],
+        recommendations=["Remove and destroy fallen leaves to reduce fungal spores",
+                          "Apply a recommended fungicide at green-tip and repeat per label interval",
+                          "Prune to improve air circulation through the canopy"],
+        prevention=["Choose scab-resistant apple varieties where possible",
+                     "Avoid overhead irrigation that keeps foliage wet",
+                     "Rake and dispose of leaf litter each autumn"],
+    ),
+    ("Apple", "Black_rot"): dict(
+        symptoms=["Purple-bordered leaf spots (\"frog-eye leaf spot\")",
+                   "Rotting, mummified fruit with concentric rings",
+                   "Sunken, reddish-brown cankers on branches"],
+        recommendations=["Prune out and destroy cankered wood and mummified fruit",
+                          "Apply fungicide during bloom through early summer per label",
+                          "Remove nearby dead or diseased wood that can harbor spores"],
+        prevention=["Sanitize pruning tools between cuts",
+                     "Avoid wounding bark and fruit during harvest",
+                     "Maintain tree vigor with balanced fertilization"],
+    ),
+    ("Apple", "Cedar_apple_rust"): dict(
+        symptoms=["Bright yellow-orange spots on upper leaf surface",
+                   "Small raised cups or tubes on the underside of leaves",
+                   "Distorted or spotted fruit in severe cases"],
+        recommendations=["Apply a protective fungicide from pink bud through early summer",
+                          "Remove nearby juniper/cedar hosts within a few hundred meters if feasible",
+                          "Rake and destroy fallen infected leaves"],
+        prevention=["Plant rust-resistant apple varieties",
+                     "Avoid planting apples near ornamental junipers",
+                     "Monitor closely in wet spring weather, which favors spread"],
+    ),
+    ("Corn_(maize)", "Cercospora_leaf_spot Gray_leaf_spot"): dict(
+        symptoms=["Small, rectangular tan-to-gray lesions bound by leaf veins",
+                   "Lesions merge in severe infections, blighting whole leaves",
+                   "Symptoms usually start on lower leaves and move upward"],
+        recommendations=["Apply a foliar fungicide if disease appears before tasseling",
+                          "Rotate with a non-host crop for at least one season",
+                          "Select resistant hybrids for future plantings"],
+        prevention=["Practice residue management/tillage to reduce overwintering spores",
+                     "Avoid continuous corn-on-corn planting in the same field",
+                     "Ensure adequate plant spacing for airflow"],
+    ),
+    ("Corn_(maize)", "Common_rust_"): dict(
+        symptoms=["Small, cinnamon-brown, powdery pustules on both leaf surfaces",
+                   "Pustules rupture the leaf epidermis, releasing rust-colored spores",
+                   "Heavily infected leaves may yellow and die prematurely"],
+        recommendations=["Apply fungicide if pustules appear early and conditions stay cool/humid",
+                          "Favor rust-resistant hybrids in future seasons",
+                          "Monitor fields regularly during cool, humid weather"],
+        prevention=["Plant resistant hybrids where common rust is a recurring issue",
+                     "Avoid excessive nitrogen that promotes dense, humid canopies",
+                     "Scout early since rust spreads quickly in favorable weather"],
+    ),
+    ("Corn_(maize)", "Northern_Leaf_Blight"): dict(
+        symptoms=["Long, cigar-shaped gray-green to tan lesions on leaves",
+                   "Lesions can span several centimeters and merge together",
+                   "Severe infection causes premature leaf death and yield loss"],
+        recommendations=["Apply a labeled fungicide, especially at or before tasseling",
+                          "Rotate crops away from corn for at least one year",
+                          "Till under crop residue where the fungus overwinters"],
+        prevention=["Plant hybrids with genetic resistance to Northern Leaf Blight",
+                     "Avoid dense planting that keeps the canopy humid",
+                     "Scout fields regularly, especially after warm, wet weather"],
+    ),
+    ("Grape", "Black_rot"): dict(
+        symptoms=["Small tan spots with dark borders on leaves",
+                   "Fruit shrivels into hard, black \"mummies\"",
+                   "Reddish-brown lesions can appear on shoots and tendrils"],
+        recommendations=["Remove and destroy mummified berries and infected leaves/canes",
+                          "Apply fungicide from early shoot growth through veraison per label",
+                          "Improve canopy airflow through timely pruning"],
+        prevention=["Prune out infected wood during dormancy",
+                     "Avoid working in the vineyard when foliage is wet",
+                     "Choose sites with good air movement and sun exposure"],
+    ),
+    ("Grape", "Esca_(Black_Measles)"): dict(
+        symptoms=["\"Tiger-stripe\" interveinal yellowing/browning on leaves",
+                   "Dark spotting on berries in severe cases",
+                   "Internal wood streaking and dieback of cordons/trunk"],
+        recommendations=["Remove and destroy severely affected vines/wood to slow spread",
+                          "Protect large pruning wounds with a wound sealant",
+                          "Avoid pruning during wet weather, when infection risk is highest"],
+        prevention=["Use delayed or double pruning to reduce wound exposure time",
+                     "Sanitize pruning tools between vines",
+                     "Maintain overall vine health to improve tolerance"],
+    ),
+    ("Grape", "Leaf_blight_(Isariopsis_Leaf_Spot)"): dict(
+        symptoms=["Angular brown-to-black spots on leaves, often with a yellow halo",
+                   "Spots may merge, leading to premature leaf drop",
+                   "Reduced vine vigor with repeated defoliation"],
+        recommendations=["Apply a protective fungicide during the growing season per label",
+                          "Remove fallen, infected leaves at season end",
+                          "Improve canopy ventilation through leaf pulling/pruning"],
+        prevention=["Avoid overhead irrigation that prolongs leaf wetness",
+                     "Maintain good weed control to improve airflow near the ground",
+                     "Monitor closely during warm, humid periods"],
+    ),
+    ("Pepper,_bell", "Bacterial_spot"): dict(
+        symptoms=["Small, water-soaked spots on leaves that turn brown and scab-like",
+                   "Raised, rough spots on fruit surface",
+                   "Leaf yellowing and drop in severe cases"],
+        recommendations=["Remove and destroy severely infected plants/leaves",
+                          "Apply a copper-based bactericide early, per local label guidance",
+                          "Avoid working among wet plants to reduce spread"],
+        prevention=["Use certified disease-free seed and transplants",
+                     "Rotate away from peppers/tomatoes for 1-2 seasons",
+                     "Avoid overhead watering; water at the base instead"],
+    ),
+    ("Potato", "Early_blight"): dict(
+        symptoms=["Dark, concentric \"target-ring\" spots on older leaves first",
+                   "Yellowing tissue surrounding leaf spots",
+                   "Lesions can also appear on stems and tubers"],
+        recommendations=["Remove and destroy heavily infected lower leaves",
+                          "Apply a labeled fungicide on a preventive schedule in humid weather",
+                          "Maintain balanced fertility — stressed plants are more susceptible"],
+        prevention=["Rotate potatoes with non-host crops for 2+ years",
+                     "Space plants for good airflow and faster leaf drying",
+                     "Avoid overhead irrigation late in the day"],
+    ),
+    ("Potato", "Late_blight"): dict(
+        symptoms=["Water-soaked, pale-to-dark green lesions that turn brown/black quickly",
+                   "White fungal growth on the underside of leaves in humid conditions",
+                   "Firm, dark, granular rot on tubers"],
+        recommendations=["Act quickly: remove and destroy infected foliage/plants",
+                          "Apply a labeled fungicide immediately — this disease spreads fast",
+                          "Avoid irrigating or harvesting in wet conditions once detected"],
+        prevention=["Plant certified, disease-free seed potatoes",
+                     "Destroy volunteer potato plants and cull piles",
+                     "Monitor closely during cool, wet weather, which favors outbreaks"],
+    ),
+    ("Tomato", "Bacterial_spot"): dict(
+        symptoms=["Small, water-soaked, greasy-looking leaf spots that turn dark",
+                   "Raised, scabby spots on green fruit",
+                   "Leaf yellowing and defoliation in severe cases"],
+        recommendations=["Remove and destroy severely infected leaves/plants",
+                          "Apply a copper-based bactericide per local label guidance",
+                          "Avoid handling wet plants to limit spread between them"],
+        prevention=["Use certified disease-free seed and transplants",
+                     "Rotate away from tomatoes/peppers for 1-2 seasons",
+                     "Water at the base of plants, not overhead"],
+    ),
+    ("Tomato", "Early_blight"): dict(
+        symptoms=["Dark, concentric \"target-ring\" spots on older/lower leaves",
+                   "Yellow halo surrounding leaf spots",
+                   "Dark, leathery lesions can form near the fruit stem"],
+        recommendations=["Remove and destroy infected lower leaves promptly",
+                          "Apply a labeled fungicide on a preventive schedule in humid weather",
+                          "Stake or cage plants to keep foliage off the soil"],
+        prevention=["Rotate tomatoes with non-host crops for 2+ years",
+                     "Mulch to reduce soil splashing spores onto leaves",
+                     "Avoid overhead irrigation late in the day"],
+    ),
+    ("Tomato", "Late_blight"): dict(
+        symptoms=["Large, water-soaked, pale-green to brown blotches on leaves",
+                   "White, fuzzy fungal growth on leaf undersides in humid weather",
+                   "Firm, dark, greasy-looking rot on fruit"],
+        recommendations=["Act quickly: remove and destroy infected foliage/plants",
+                          "Apply a labeled fungicide immediately — this disease spreads fast",
+                          "Avoid overhead watering once detected"],
+        prevention=["Space and stake plants for good airflow",
+                     "Avoid planting near infected potato fields",
+                     "Monitor closely during cool, wet, humid weather"],
+    ),
+    ("Tomato", "Leaf_Mold"): dict(
+        symptoms=["Pale green-to-yellow spots on the upper leaf surface",
+                   "Olive-green to grayish-brown fuzzy mold on the underside",
+                   "Common in humid greenhouse/covered growing conditions"],
+        recommendations=["Improve ventilation and reduce humidity around plants",
+                          "Remove and destroy heavily infected leaves",
+                          "Apply a labeled fungicide if conditions stay humid"],
+        prevention=["Space plants and prune to improve air circulation",
+                     "Water at the base of plants, avoiding wet foliage",
+                     "Choose resistant tomato varieties where available"],
+    ),
+    ("Tomato", "Septoria_leaf_spot"): dict(
+        symptoms=["Numerous small, circular spots with dark borders and gray centers",
+                   "Tiny black specks (fungal fruiting bodies) visible in spot centers",
+                   "Lower leaves affected first, often causing yellowing and drop"],
+        recommendations=["Remove and destroy infected lower leaves promptly",
+                          "Apply a labeled fungicide on a preventive schedule",
+                          "Avoid working among wet plants to limit spread"],
+        prevention=["Rotate tomatoes with non-host crops for at least one season",
+                     "Mulch to reduce soil splash onto lower leaves",
+                     "Stake or cage plants to keep foliage off the ground"],
+    ),
+    ("Tomato", "Spider_mites Two-spotted_spider_mite"): dict(
+        symptoms=["Fine yellow/white stippling on leaf surfaces",
+                   "Fine webbing on leaves and stems in heavy infestations",
+                   "Leaves may bronze, dry out, and drop in severe cases"],
+        recommendations=["Rinse plants with a strong water spray to dislodge mites",
+                          "Apply an appropriate miticide or insecticidal soap if severe",
+                          "Introduce or conserve natural predators where feasible"],
+        prevention=["Avoid drought-stressing plants, which favors mite outbreaks",
+                     "Monitor closely during hot, dry weather",
+                     "Remove heavily infested leaves early"],
+    ),
+    ("Tomato", "Target_Spot"): dict(
+        symptoms=["Brown, concentric-ringed spots on leaves, stems and fruit",
+                   "Spots may merge, causing large blighted areas",
+                   "Can lead to significant defoliation in humid conditions"],
+        recommendations=["Remove and destroy infected leaves/debris",
+                          "Apply a labeled fungicide on a preventive schedule in humid weather",
+                          "Improve airflow through staking and pruning"],
+        prevention=["Rotate with non-host crops where possible",
+                     "Avoid overhead irrigation late in the day",
+                     "Space plants adequately for airflow"],
+    ),
+    ("Tomato", "Tomato_Yellow_Leaf_Curl_Virus"): dict(
+        symptoms=["Upward curling and yellowing of leaflet margins",
+                   "Stunted plant growth and reduced fruit set",
+                   "Spread primarily by whiteflies"],
+        recommendations=["Remove and destroy infected plants to reduce virus reservoirs",
+                          "Control whitefly populations with appropriate measures",
+                          "There is no cure once a plant is infected — focus on prevention"],
+        prevention=["Use whitefly-resistant or tolerant tomato varieties",
+                     "Use reflective mulch or fine mesh netting to deter whiteflies",
+                     "Remove nearby weeds that can host whiteflies/virus"],
+    ),
+    ("Tomato", "Tomato_mosaic_virus"): dict(
+        symptoms=["Light and dark green mottling/mosaic pattern on leaves",
+                   "Leaf distortion, curling, or fern-like narrowing",
+                   "Stunted growth and reduced, sometimes mottled, fruit"],
+        recommendations=["Remove and destroy infected plants — there is no cure",
+                          "Wash hands and disinfect tools after handling infected plants",
+                          "Avoid tobacco use near plants; the virus can be transmitted this way"],
+        prevention=["Use certified virus-free seed and resistant varieties",
+                     "Disinfect tools and hands between plants when pruning/staking",
+                     "Control weeds that may harbor the virus"],
+    ),
 }
-renderCropGrid();
 
-/* ---------------------------- Image upload ---------------------------- */
-const uploadArea = document.getElementById("upload-area");
-const fileInput = document.getElementById("file-input");
-const previewImg = document.getElementById("preview-img");
-const uploadPlaceholder = document.getElementById("upload-placeholder");
+# ---------------------------------------------------------------------------
+# Model loading (once, at process start)
+# ---------------------------------------------------------------------------
+_interpreter = None
+_input_details = None
+_output_details = None
 
-document.getElementById("btn-choose-file").addEventListener("click", (e) => {
-  e.stopPropagation();
-  fileInput.click();
-});
-document.getElementById("btn-camera").addEventListener("click", (e) => {
-  e.stopPropagation();
-  fileInput.setAttribute("capture", "environment");
-  fileInput.click();
-});
-uploadArea.addEventListener("click", () => fileInput.click());
-fileInput.addEventListener("change", () => {
-  if (fileInput.files && fileInput.files[0]) handleFile(fileInput.files[0]);
-});
 
-["dragover", "dragenter"].forEach(evt =>
-  uploadArea.addEventListener(evt, e => { e.preventDefault(); uploadArea.classList.add("dragover"); })
-);
-["dragleave", "drop"].forEach(evt =>
-  uploadArea.addEventListener(evt, e => { e.preventDefault(); uploadArea.classList.remove("dragover"); })
-);
-uploadArea.addEventListener("drop", e => {
-  if (e.dataTransfer.files && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
-});
+def load_model():
+    global _interpreter, _input_details, _output_details
+    if _interpreter is not None:
+        return
+    if not os.path.exists(MODEL_PATH):
+        return
+    _interpreter = Interpreter(model_path=MODEL_PATH)
+    _interpreter.allocate_tensors()
+    _input_details = _interpreter.get_input_details()
+    _output_details = _interpreter.get_output_details()
 
-function handleFile(file) {
-  if (!file.type.startsWith("image/")) {
-    alert("Please choose an image file.");
-    return;
-  }
-  if (file.size > 12 * 1024 * 1024) {
-    alert("That image is too large. Please choose a photo under 12MB.");
-    return;
-  }
-  state.selectedFile = file;
-  const reader = new FileReader();
-  reader.onload = () => {
-    previewImg.src = reader.result;
-    previewImg.hidden = false;
-    uploadPlaceholder.hidden = true;
-  };
-  reader.readAsDataURL(file);
-  updateAnalyzeButton();
-}
 
-function updateAnalyzeButton() {
-  document.getElementById("btn-analyze").disabled = !(state.selectedCrop && state.selectedFile);
-}
+def confidence_tier(confidence: float) -> str:
+    if confidence >= 0.75:
+        return "high"
+    if confidence >= 0.45:
+        return "moderate"
+    return "low"
 
-/* ---------------------------- Analyze ---------------------------- */
-document.getElementById("btn-analyze").addEventListener("click", runAnalysis);
 
-async function runAnalysis() {
-  const resultStep = document.getElementById("result-step");
-  const loading = document.getElementById("analysis-loading");
-  const resultBox = document.getElementById("analysis-result");
-  resultStep.hidden = false;
-  loading.hidden = false;
-  resultBox.innerHTML = "";
+def severity_from_tier(tier: str, is_healthy: bool) -> str:
+    if is_healthy:
+        return "none"
+    return {"high": "High", "moderate": "Moderate", "low": "Low"}[tier]
 
-  const formData = new FormData();
-  formData.append("crop", state.selectedCrop);
-  formData.append("image", state.selectedFile);
 
-  try {
-    const res = await fetch(`${state.apiUrl}/api/analyze`, { method: "POST", body: formData });
-    const data = await res.json();
-    loading.hidden = true;
-    renderResult(data);
-    if (data.status === "success") {
-      state.lastResult = data;
-      await saveHistoryRecord(data);
-      updateDashboard();
-      updateIntelligence(data);
+def run_inference(image_bytes: bytes):
+    """Runs the real MobileNetV2 tflite model on the given image bytes.
+    Returns the raw 27-length probability array."""
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = img.resize((224, 224))
+    arr = np.asarray(img, dtype=np.float32) / 255.0
+    arr = np.expand_dims(arr, axis=0)
+
+    _interpreter.set_tensor(_input_details[0]["index"], arr)
+    _interpreter.invoke()
+    output = _interpreter.get_tensor(_output_details[0]["index"])
+    return output[0]
+
+
+# ---------------------------------------------------------------------------
+# Database (Neon Postgres) — analysis history
+# ---------------------------------------------------------------------------
+_memory_history = []  # fallback store used only when DATABASE_URL isn't set
+
+
+def get_db():
+    if not DATABASE_URL or psycopg2 is None:
+        return None
+    conn = psycopg2.connect(DATABASE_URL, sslmode="require")
+    return conn
+
+
+def init_db():
+    conn = get_db()
+    if conn is None:
+        return
+    with conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS analysis_history (
+                id UUID PRIMARY KEY,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                crop TEXT NOT NULL,
+                disease TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                severity TEXT NOT NULL,
+                status TEXT NOT NULL
+            );
+            """
+        )
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+@app.route("/api/health", methods=["GET"])
+def health():
+    return jsonify({
+        "status": "ok",
+        "model_loaded": _interpreter is not None,
+        "database_connected": DATABASE_URL is not None,
+    })
+
+
+@app.route("/api/crops", methods=["GET"])
+def crops():
+    return jsonify(ALL_CROPS)
+
+
+@app.route("/api/analyze", methods=["POST"])
+def analyze():
+    crop_id = request.form.get("crop", "")
+    image_file = request.files.get("image")
+
+    if not crop_id:
+        return jsonify({"status": "error", "message": "No crop selected."}), 400
+    if image_file is None:
+        return jsonify({"status": "error", "message": "No image was uploaded."}), 400
+
+    # Guard 1: crop the model has no classes for at all.
+    if crop_id not in MODEL_SUPPORTED_CROP_IDS:
+        return jsonify({
+            "status": "crop_not_supported",
+            "message": "This crop isn't supported by the trained model yet.",
+            "selected_crop": crop_id,
+        })
+
+    if _interpreter is None:
+        load_model()
+    if _interpreter is None:
+        return jsonify({
+            "status": "model_unavailable",
+            "message": "AI model is being connected. Please try again shortly.",
+        }), 503
+
+    image_bytes = image_file.read()
+    try:
+        probabilities = run_inference(image_bytes)
+    except Exception:
+        return jsonify({
+            "status": "image_unreadable",
+            "message": "That image couldn't be read. Please try a clearer photo.",
+        }), 400
+
+    best_index = int(np.argmax(probabilities))
+    confidence = float(probabilities[best_index])
+    raw_label = LABELS[best_index]
+    parts = raw_label.split("___")
+    predicted_crop_raw = parts[0]
+    predicted_disease = parts[1] if len(parts) > 1 else raw_label
+    detected_crop_id = MODEL_CROP_TO_APP_CROP_ID.get(predicted_crop_raw)
+
+    # Guard 2: model detected a different crop than the one selected.
+    if detected_crop_id != crop_id:
+        return jsonify({
+            "status": "crop_mismatch",
+            "message": "Image does not appear to match the selected crop.",
+            "selected_crop": crop_id,
+            "detected_crop": detected_crop_id,
+        })
+
+    is_healthy = predicted_disease.lower() == "healthy"
+    tier = confidence_tier(confidence)
+
+    if is_healthy:
+        result = {
+            "status": "success",
+            "crop": detected_crop_id,
+            "disease": "Healthy",
+            "is_healthy": True,
+            "confidence": round(confidence * 100, 1),
+            "confidence_tier": tier,
+            "severity": "none",
+            "symptoms": ["No visible signs of disease were detected in the image."],
+            "recommendations": ["Continue routine monitoring and good field/orchard practices."],
+            "prevention": ["Keep monitoring regularly, since new symptoms can appear over time."],
+        }
+    else:
+        info = KNOWLEDGE_BASE.get((predicted_crop_raw, predicted_disease))
+        if info is None:
+            info = dict(
+                symptoms=["Detailed information is not yet available in the local knowledge base."],
+                recommendations=["Consult a local agricultural expert before applying any treatment."],
+                prevention=["Use verified crop-management guidance for this disease."],
+            )
+        result = {
+            "status": "success",
+            "crop": detected_crop_id,
+            "disease": predicted_disease.replace("_", " "),
+            "is_healthy": False,
+            "confidence": round(confidence * 100, 1),
+            "confidence_tier": tier,
+            "severity": severity_from_tier(tier, False),
+            "symptoms": info["symptoms"],
+            "recommendations": info["recommendations"],
+            "prevention": info["prevention"],
+        }
+
+    if tier == "low":
+        result["warning"] = "Confidence is low — consider retaking the photo in better light, closer up."
+
+    return jsonify(result)
+
+
+@app.route("/api/history", methods=["GET"])
+def get_history():
+    conn = get_db()
+    if conn is None:
+        return jsonify(list(reversed(_memory_history)))
+    with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT * FROM analysis_history ORDER BY created_at DESC LIMIT 200;")
+        rows = cur.fetchall()
+    conn.close()
+    for r in rows:
+        r["id"] = str(r["id"])
+        r["created_at"] = r["created_at"].isoformat()
+    return jsonify(rows)
+
+
+@app.route("/api/history", methods=["POST"])
+def save_history():
+    data = request.get_json(force=True, silent=True) or {}
+    record = {
+        "id": str(uuid.uuid4()),
+        "created_at": datetime.datetime.utcnow().isoformat(),
+        "crop": data.get("crop", "unknown"),
+        "disease": data.get("disease", "unknown"),
+        "confidence": float(data.get("confidence", 0)),
+        "severity": data.get("severity", "none"),
+        "status": data.get("status", "success"),
     }
-  } catch (err) {
-    loading.hidden = true;
-    resultBox.innerHTML = `<div class="error-box"><strong>Couldn't reach the AI service.</strong><br>
-      Check your internet connection, or set the correct Backend API URL in Settings.</div>`;
-  }
-}
+    conn = get_db()
+    if conn is None:
+        _memory_history.append(record)
+        return jsonify(record), 201
+    with conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO analysis_history (id, crop, disease, confidence, severity, status) "
+            "VALUES (%s, %s, %s, %s, %s, %s);",
+            (record["id"], record["crop"], record["disease"], record["confidence"],
+             record["severity"], record["status"]),
+        )
+    conn.close()
+    return jsonify(record), 201
 
-function renderResult(data) {
-  const box = document.getElementById("analysis-result");
 
-  if (data.status === "crop_mismatch") {
-    box.innerHTML = `<div class="notice-box">
-      <strong>Image does not appear to match the selected crop.</strong><br>
-      Please upload a photo that actually shows the crop you selected.
-    </div>`;
-    return;
-  }
-  if (data.status === "crop_not_supported") {
-    box.innerHTML = `<div class="notice-box">
-      <strong>This crop isn't supported by the trained model yet.</strong><br>
-      Currently supported crops: Maize, Tomato, Potato, Apple, Grape, Pepper.
-    </div>`;
-    return;
-  }
-  if (data.status === "image_unreadable") {
-    box.innerHTML = `<div class="error-box">That image couldn't be read. Please try a clearer photo.</div>`;
-    return;
-  }
-  if (data.status === "model_unavailable") {
-    box.innerHTML = `<div class="error-box"><strong>AI model is being connected.</strong><br>Please try again shortly.</div>`;
-    return;
-  }
-  if (data.status !== "success") {
-    box.innerHTML = `<div class="error-box">Something went wrong. Please try again.</div>`;
-    return;
-  }
+@app.route("/api/history/<record_id>", methods=["DELETE"])
+def delete_history_item(record_id):
+    conn = get_db()
+    if conn is None:
+        global _memory_history
+        _memory_history = [r for r in _memory_history if r["id"] != record_id]
+        return jsonify({"deleted": record_id})
+    with conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM analysis_history WHERE id = %s;", (record_id,))
+    conn.close()
+    return jsonify({"deleted": record_id})
 
-  const pillClass = data.is_healthy ? "healthy" : (data.confidence_tier === "low" ? "warn" : "diseased");
-  const pillText = data.is_healthy ? "Healthy" : data.disease;
 
-  box.innerHTML = `
-    <div class="result-card">
-      <div class="result-header">
-        <div>
-          <h3 style="margin:0">${capitalize(data.crop)}</h3>
-          <span class="status-pill ${pillClass}">${pillText}</span>
-        </div>
-        <div style="text-align:right">
-          <div><strong>${data.confidence}%</strong> confidence</div>
-          <div class="muted">Severity: ${data.severity}</div>
-        </div>
-      </div>
-      <div class="confidence-bar-track"><div class="confidence-bar-fill" style="width:${data.confidence}%"></div></div>
+@app.route("/api/history", methods=["DELETE"])
+def clear_history():
+    conn = get_db()
+    if conn is None:
+        _memory_history.clear()
+        return jsonify({"cleared": True})
+    with conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM analysis_history;")
+    conn.close()
+    return jsonify({"cleared": True})
 
-      ${data.warning ? `<div class="notice-box">${data.warning}</div>` : ""}
 
-      <div class="result-section">
-        <h4>Main Symptoms</h4>
-        <ul>${data.symptoms.map(s => `<li>${s}</li>`).join("")}</ul>
-      </div>
-      <div class="result-section">
-        <h4>Recommended Actions</h4>
-        <ul>${data.recommendations.map(s => `<li>${s}</li>`).join("")}</ul>
-      </div>
-      <div class="result-section">
-        <h4>Prevention</h4>
-        <ul>${data.prevention.map(s => `<li>${s}</li>`).join("")}</ul>
-      </div>
-      <div class="result-section learn-links">
-        <h4>Learn More</h4>
-        ${learnMoreLinks(data.crop, data.disease)}
-      </div>
-      <div class="result-section">
-        <button class="btn btn-secondary" data-goto="assistant" id="btn-ask-ai">Ask AI About This</button>
-      </div>
-    </div>
-  `;
-  document.getElementById("btn-ask-ai").addEventListener("click", () => {
-    goto("assistant");
-    seedAssistantWithDiagnosis(data);
-  });
-}
+load_model()
+init_db()
 
-function learnMoreLinks(crop, disease) {
-  const cropWiki = `https://en.wikipedia.org/wiki/${encodeURIComponent(capitalize(crop))}`;
-  const diseaseWiki = `https://en.wikipedia.org/wiki/${encodeURIComponent(disease.replace(/\s+/g, "_"))}`;
-  return `<a href="${cropWiki}" target="_blank" rel="noopener">${capitalize(crop)} on Wikipedia ↗</a>
-          <a href="${diseaseWiki}" target="_blank" rel="noopener">${disease} on Wikipedia ↗</a>`;
-}
-
-function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
-
-/* ---------------------------- History (backend + localStorage fallback) ---------------------------- */
-async function saveHistoryRecord(data) {
-  const record = {
-    crop: data.crop,
-    disease: data.disease,
-    confidence: data.confidence,
-    severity: data.severity,
-    status: data.status,
-  };
-  try {
-    const res = await fetch(`${state.apiUrl}/api/history`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(record),
-    });
-    const saved = await res.json();
-    state.history.unshift(saved);
-  } catch {
-    record.id = "local-" + Date.now();
-    record.created_at = new Date().toISOString();
-    state.history.unshift(record);
-    persistLocalHistory();
-  }
-  renderHistory();
-}
-
-function persistLocalHistory() {
-  localStorage.setItem("cd_history_fallback", JSON.stringify(state.history.filter(h => String(h.id).startsWith("local-"))));
-}
-
-async function loadHistory() {
-  try {
-    const res = await fetch(`${state.apiUrl}/api/history`);
-    state.history = await res.json();
-  } catch {
-    state.history = JSON.parse(localStorage.getItem("cd_history_fallback") || "[]");
-  }
-  renderHistory();
-  updateDashboard();
-}
-
-function renderHistory() {
-  const list = document.getElementById("history-list");
-  if (!state.history.length) {
-    list.innerHTML = `<p class="muted">No analyses yet.</p>`;
-  } else {
-    list.innerHTML = state.history.map(h => `
-      <div class="history-item">
-        <div>
-          <strong>${capitalize(h.crop)} — ${h.disease}</strong>
-          <div class="meta">${new Date(h.created_at).toLocaleString()} · ${h.confidence}% confidence · ${h.severity} severity</div>
-        </div>
-        <button data-id="${h.id}" class="btn-delete-history">Delete</button>
-      </div>
-    `).join("");
-    list.querySelectorAll(".btn-delete-history").forEach(b => {
-      b.addEventListener("click", () => deleteHistoryItem(b.dataset.id));
-    });
-  }
-  renderHistoryChart();
-}
-
-async function deleteHistoryItem(id) {
-  try {
-    await fetch(`${state.apiUrl}/api/history/${id}`, { method: "DELETE" });
-  } catch { /* fall through to local removal */ }
-  state.history = state.history.filter(h => String(h.id) !== String(id));
-  persistLocalHistory();
-  renderHistory();
-  updateDashboard();
-}
-
-document.getElementById("btn-clear-history").addEventListener("click", async () => {
-  if (!confirm("Clear all analysis history?")) return;
-  try {
-    await fetch(`${state.apiUrl}/api/history`, { method: "DELETE" });
-  } catch { /* ignore */ }
-  state.history = [];
-  localStorage.removeItem("cd_history_fallback");
-  renderHistory();
-  updateDashboard();
-});
-
-/* ---------------------------- Dashboard ---------------------------- */
-let confidenceChart, historyChart;
-
-function updateDashboard() {
-  const latestBox = document.getElementById("dash-latest");
-  if (state.history.length) {
-    const h = state.history[0];
-    latestBox.innerHTML = `<strong>${capitalize(h.crop)} — ${h.disease}</strong><br>
-      <span class="muted">${h.confidence}% confidence · ${h.severity} severity</span>`;
-  } else {
-    latestBox.textContent = "No analysis yet. Analyze a crop to get started.";
-  }
-  document.getElementById("dash-history-count").textContent = `${state.history.length} analyses saved`;
-  renderConfidenceChart();
-}
-
-function renderConfidenceChart() {
-  const ctx = document.getElementById("chart-confidence");
-  const h = state.history[0];
-  const healthy = h ? (h.disease.toLowerCase() === "healthy" ? h.confidence : 100 - h.confidence) : 50;
-  const disease = 100 - healthy;
-  if (confidenceChart) confidenceChart.destroy();
-  confidenceChart = new Chart(ctx, {
-    type: "doughnut",
-    data: {
-      labels: ["Healthy probability", "Disease probability"],
-      datasets: [{ data: [healthy, disease], backgroundColor: ["#2E7D4F", "#c0392b"] }],
-    },
-    options: { plugins: { legend: { position: "bottom" } } },
-  });
-}
-
-function renderHistoryChart() {
-  const ctx = document.getElementById("chart-history");
-  if (!ctx) return;
-  const recent = [...state.history].reverse().slice(-15);
-  if (historyChart) historyChart.destroy();
-  historyChart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: recent.map(h => new Date(h.created_at).toLocaleDateString()),
-      datasets: [{
-        label: "Confidence over time",
-        data: recent.map(h => h.confidence),
-        borderColor: "#2E7D4F",
-        backgroundColor: "rgba(46,125,79,0.15)",
-        tension: 0.3,
-        fill: true,
-      }],
-    },
-    options: { scales: { y: { min: 0, max: 100 } } },
-  });
-}
-
-/* ---------------------------- Crop Intelligence ---------------------------- */
-function updateIntelligence(data) {
-  document.getElementById("intel-diagnosis").innerHTML =
-    `<strong>${capitalize(data.crop)} — ${data.disease}</strong><br>
-     Confidence: ${data.confidence}% · Severity: ${data.severity}`;
-  document.getElementById("intel-links").innerHTML = learnMoreLinks(data.crop, data.disease);
-  fetchWeatherRisk();
-}
-
-function fetchWeatherRisk() {
-  const box = document.getElementById("intel-weather");
-  const dashBox = document.getElementById("dash-weather");
-  if (!navigator.geolocation) {
-    box.textContent = "Weather intelligence unavailable — diagnosis is still available offline.";
-    dashBox.textContent = "Location unavailable.";
-    return;
-  }
-  navigator.geolocation.getCurrentPosition(async pos => {
-    try {
-      const { latitude, longitude } = pos.coords;
-      const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,precipitation`);
-      const w = await res.json();
-      const c = w.current;
-      const humidity = c.relative_humidity_2m;
-      const risk = humidity > 80 ? "High (humid conditions favor fungal spread)" : humidity > 55 ? "Moderate" : "Low";
-      const text = `${c.temperature_2m}°C, ${humidity}% humidity, ${c.precipitation}mm precipitation. Disease risk: <strong>${risk}</strong>`;
-      box.innerHTML = text;
-      dashBox.innerHTML = text;
-    } catch {
-      box.textContent = "Weather intelligence unavailable — diagnosis is still available offline.";
-      dashBox.textContent = "Weather unavailable.";
-    }
-  }, () => {
-    box.textContent = "Weather intelligence unavailable — diagnosis is still available offline.";
-    dashBox.textContent = "Location permission not granted.";
-  });
-}
-fetchWeatherRisk();
-
-/* ---------------------------- AI Assistant (Ollama, browser Web Speech) ---------------------------- */
-const chatBox = document.getElementById("chat-box");
-let diagnosisContext = null;
-
-function addChatMsg(role, text) {
-  const div = document.createElement("div");
-  div.className = `chat-msg ${role}`;
-  div.textContent = text;
-  chatBox.appendChild(div);
-  chatBox.scrollTop = chatBox.scrollHeight;
-}
-
-function seedAssistantWithDiagnosis(data) {
-  diagnosisContext = data;
-  addChatMsg("bot", `Here's what I found: ${capitalize(data.crop)} — ${data.disease} (${data.confidence}% confidence, ${data.severity} severity). Ask me anything about it.`);
-}
-
-document.getElementById("btn-send-chat").addEventListener("click", sendChat);
-document.getElementById("chat-input").addEventListener("keydown", e => { if (e.key === "Enter") sendChat(); });
-
-async function sendChat() {
-  const input = document.getElementById("chat-input");
-  const question = input.value.trim();
-  if (!question) return;
-  addChatMsg("user", question);
-  input.value = "";
-
-  const contextText = diagnosisContext
-    ? `Crop: ${diagnosisContext.crop}\nDisease: ${diagnosisContext.disease}\nConfidence: ${diagnosisContext.confidence}%\nSeverity: ${diagnosisContext.severity}\nSymptoms: ${diagnosisContext.symptoms.join("; ")}\nRecommendations: ${diagnosisContext.recommendations.join("; ")}`
-    : "No diagnosis has been run yet.";
-
-  if (!state.ollamaUrl) {
-    addChatMsg("bot", offlineAssistantAnswer(question));
-    return;
-  }
-
-  try {
-    const res = await fetch(`${state.ollamaUrl}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "llama3",
-        stream: false,
-        prompt: `You are a farmer-friendly crop health assistant. Explain in simple language.
-The ML model's diagnosis is the ONLY source of truth for what disease was detected — never invent a different diagnosis.
-Diagnosis context:\n${contextText}\n\nFarmer's question: ${question}`,
-      }),
-    });
-    const data = await res.json();
-    const answer = data.response || "I couldn't generate a response right now.";
-    addChatMsg("bot", answer);
-    speak(answer);
-  } catch {
-    addChatMsg("bot", "Couldn't reach the local Ollama AI assistant. Check the URL in Settings, or ask again — I can still answer basic questions offline.");
-  }
-}
-
-function offlineAssistantAnswer(question) {
-  if (!diagnosisContext) {
-    return "Please analyze a crop image first — then I can explain the diagnosis for you. (Connect Ollama in Settings for full conversational answers.)";
-  }
-  const q = question.toLowerCase();
-  if (q.includes("why")) return `${diagnosisContext.disease} typically develops from environmental conditions like humidity and moisture on the leaf surface. See the Prevention section in your results for how to reduce risk.`;
-  if (q.includes("prevent")) return `Prevention tips: ${diagnosisContext.prevention.join(" ")}`;
-  if (q.includes("symptom")) return `Symptoms to watch for: ${diagnosisContext.symptoms.join(" ")}`;
-  if (q.includes("monitor")) return `Keep checking affected leaves every few days, and watch nearby healthy plants for early symptoms.`;
-  return `Recommended actions: ${diagnosisContext.recommendations.join(" ")} (Connect Ollama in Settings for more detailed, conversational answers.)`;
-}
-
-/* ---------- Voice (Web Speech API, with graceful fallback) ---------- */
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognition = null;
-if (SpeechRecognition) {
-  recognition = new SpeechRecognition();
-  recognition.continuous = false;
-  recognition.onresult = e => {
-    document.getElementById("chat-input").value = e.results[0][0].transcript;
-    sendChat();
-  };
-} else {
-  document.getElementById("voice-fallback").hidden = false;
-  document.getElementById("btn-mic").disabled = true;
-}
-
-document.getElementById("btn-mic").addEventListener("click", () => {
-  if (recognition) recognition.start();
-});
-
-function speak(text) {
-  if (!("speechSynthesis" in window)) return;
-  const utter = new SpeechSynthesisUtterance(text);
-  const stopBtn = document.getElementById("btn-stop-speak");
-  stopBtn.hidden = false;
-  utter.onend = () => { stopBtn.hidden = true; };
-  speechSynthesis.speak(utter);
-}
-document.getElementById("btn-stop-speak").addEventListener("click", () => {
-  speechSynthesis.cancel();
-  document.getElementById("btn-stop-speak").hidden = true;
-});
-
-/* ---------------------------- Settings ---------------------------- */
-document.getElementById("api-url-input").value = state.apiUrl;
-document.getElementById("ollama-url-input").value = state.ollamaUrl;
-
-document.getElementById("btn-save-api").addEventListener("click", () => {
-  const val = document.getElementById("api-url-input").value.trim().replace(/\/$/, "");
-  state.apiUrl = val;
-  localStorage.setItem("cd_api_url", val);
-  document.getElementById("api-status").textContent = "Saved. Checking connection…";
-  checkApiHealth();
-});
-document.getElementById("btn-save-ollama").addEventListener("click", () => {
-  const val = document.getElementById("ollama-url-input").value.trim().replace(/\/$/, "");
-  state.ollamaUrl = val;
-  localStorage.setItem("cd_ollama_url", val);
-});
-
-async function checkApiHealth() {
-  const statusEl = document.getElementById("api-status");
-  try {
-    const res = await fetch(`${state.apiUrl}/api/health`);
-    const data = await res.json();
-    statusEl.textContent = `Connected. Model loaded: ${data.model_loaded ? "yes" : "no"}. Database connected: ${data.database_connected ? "yes" : "no"}.`;
-  } catch {
-    statusEl.textContent = "Couldn't reach the backend at that URL.";
-  }
-}
-
-/* ---------------------------- Init ---------------------------- */
-checkApiHealth();
-loadHistory();
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
