@@ -1,0 +1,7 @@
+flask==3.0.3
+flask-cors==4.0.1
+numpy==1.26.4
+pillow==10.4.0
+tflite-runtime==2.14.0
+psycopg2-binary==2.9.9
+gunicorn==22.0.0

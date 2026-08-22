@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crop Doctor — AI Crop Health Assistant</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-emoji">🌱</span>
+    <span class="brand-name">Crop Doctor</span>
+  </div>
+  <nav class="tabs" id="nav-tabs">
+    <button class="tab active" data-tab="home">Dashboard</button>
+    <button class="tab" data-tab="analyze">Analyze Crop</button>
+    <button class="tab" data-tab="assistant">AI Assistant</button>
+    <button class="tab" data-tab="history">History</button>
+    <button class="tab" data-tab="intelligence">Crop Intelligence</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </nav>
+  <button class="menu-toggle" id="menu-toggle" aria-label="Menu">☰</button>
+</header>
+
+<main>
+
+  <!-- ================= HOME / DASHBOARD ================= -->
+  <section id="tab-home" class="tab-panel active">
+    <div class="hero">
+      <h1>Crop Doctor</h1>
+      <p class="hero-sub">Your AI Crop Health Assistant</p>
+      <button class="btn btn-primary btn-large" data-goto="analyze">📷 Analyze a Crop</button>
+      <div class="hero-secondary">
+        <button class="btn btn-ghost" data-goto="assistant">💬 Ask AI</button>
+        <button class="btn btn-ghost" data-goto="history">🕘 View History</button>
+        <button class="btn btn-ghost" data-goto="intelligence">🌦️ Crop Intelligence</button>
+      </div>
+    </div>
+
+    <div class="card-grid">
+      <div class="dash-card">
+        <h3>Latest Analysis</h3>
+        <div id="dash-latest">No analysis yet. Analyze a crop to get started.</div>
+      </div>
+      <div class="dash-card">
+        <h3>Crop Health</h3>
+        <canvas id="chart-confidence" height="160"></canvas>
+      </div>
+      <div class="dash-card">
+        <h3>AI Assistant</h3>
+        <p>Ask questions about any diagnosis in plain language, in English or Telugu.</p>
+        <button class="btn btn-secondary" data-goto="assistant">Open Assistant</button>
+      </div>
+      <div class="dash-card">
+        <h3>Weather / Risk</h3>
+        <div id="dash-weather">Checking conditions…</div>
+      </div>
+      <div class="dash-card">
+        <h3>Analysis History</h3>
+        <div id="dash-history-count">0 analyses saved</div>
+        <button class="btn btn-secondary" data-goto="history">View All</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= ANALYZE ================= -->
+  <section id="tab-analyze" class="tab-panel">
+    <h2>Analyze Crop</h2>
+
+    <div class="step-row" id="crop-select-step">
+      <label class="field-label">1. Select your crop</label>
+      <div class="crop-grid" id="crop-grid"></div>
+    </div>
+
+    <div class="step-row" id="image-step">
+      <label class="field-label">2. Upload a photo of the leaf</label>
+      <div class="upload-area" id="upload-area">
+        <input type="file" id="file-input" accept="image/*" hidden>
+        <div id="upload-placeholder">
+          <div class="upload-icon">📷</div>
+          <p><strong>Tap to upload</strong> or drag and drop an image</p>
+          <p class="muted">JPG or PNG, clear photo of a single leaf works best</p>
+          <div class="upload-btns">
+            <button class="btn btn-primary" id="btn-choose-file">Choose Photo</button>
+            <button class="btn btn-ghost" id="btn-camera">Use Camera</button>
+          </div>
+        </div>
+        <img id="preview-img" hidden alt="Selected leaf preview">
+      </div>
+      <button class="btn btn-primary btn-large" id="btn-analyze" disabled>Analyze</button>
+    </div>
+
+    <div class="step-row" id="result-step" hidden>
+      <div id="analysis-loading" hidden class="loading-box">
+        <div class="spinner"></div>
+        <p>Running AI analysis…</p>
+      </div>
+      <div id="analysis-result"></div>
+    </div>
+  </section>
+
+  <!-- ================= AI ASSISTANT ================= -->
+  <section id="tab-assistant" class="tab-panel">
+    <h2>Crop Doctor AI Assistant</h2>
+    <p class="muted">Ask about your latest diagnosis, symptoms, prevention, or general crop health. Powered by a local Ollama model when connected — the ML diagnosis above always stays the source of truth.</p>
+
+    <div class="chat-box" id="chat-box">
+      <div class="chat-msg bot">Hi! Analyze a crop first, then ask me things like "why did this happen?" or "how do I prevent it?"</div>
+    </div>
+
+    <div class="chat-input-row">
+      <button class="btn btn-icon" id="btn-mic" title="Speak">🎤</button>
+      <input type="text" id="chat-input" placeholder="Type your question…">
+      <button class="btn btn-primary" id="btn-send-chat">Send</button>
+      <button class="btn btn-icon" id="btn-stop-speak" title="Stop speaking" hidden>⏹️</button>
+    </div>
+    <div id="voice-fallback" class="muted" hidden>Voice input/output isn't supported in this browser — you can still type your questions.</div>
+  </section>
+
+  <!-- ================= HISTORY ================= -->
+  <section id="tab-history" class="tab-panel">
+    <div class="history-header">
+      <h2>Analysis History</h2>
+      <button class="btn btn-ghost" id="btn-clear-history">Clear All</button>
+    </div>
+    <canvas id="chart-history" height="120"></canvas>
+    <div id="history-list" class="history-list"></div>
+  </section>
+
+  <!-- ================= CROP INTELLIGENCE ================= -->
+  <section id="tab-intelligence" class="tab-panel">
+    <h2>Crop Intelligence</h2>
+    <div class="card-grid">
+      <div class="dash-card">
+        <h3>Current Diagnosis</h3>
+        <div id="intel-diagnosis">No recent diagnosis available.</div>
+      </div>
+      <div class="dash-card">
+        <h3>Weather &amp; Environmental Risk</h3>
+        <div id="intel-weather">Weather intelligence unavailable — diagnosis is still available offline.</div>
+      </div>
+      <div class="dash-card">
+        <h3>Learn More</h3>
+        <div id="intel-links">Analyze a crop to get educational links.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SETTINGS ================= -->
+  <section id="tab-settings" class="tab-panel">
+    <h2>Settings</h2>
+    <div class="settings-row">
+      <label class="field-label">Language</label>
+      <select id="lang-select">
+        <option value="en">English</option>
+        <option value="te">తెలుగు (Telugu)</option>
+      </select>
+    </div>
+    <div class="settings-row">
+      <label class="field-label">Backend API URL</label>
+      <input type="text" id="api-url-input" placeholder="https://your-backend.onrender.com">
+      <button class="btn btn-secondary" id="btn-save-api">Save</button>
+      <p class="muted" id="api-status"></p>
+    </div>
+    <div class="settings-row">
+      <label class="field-label">Ollama AI Assistant URL (optional, local)</label>
+      <input type="text" id="ollama-url-input" placeholder="http://localhost:11434">
+      <button class="btn btn-secondary" id="btn-save-ollama">Save</button>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <p>Crop Doctor — offline-first diagnosis, online enhancements when available.</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
