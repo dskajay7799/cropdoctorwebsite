@@ -39,10 +39,9 @@ import numpy as np
 # tflite runtime: prefer the lightweight tflite-runtime package (small,
 # Render-friendly). Fall back to full tensorflow if that's what's installed.
 # ---------------------------------------------------------------------------
-try:
-    from tflite_runtime.interpreter import Interpreter
-except ImportError:  # pragma: no cover
-    from tensorflow.lite import Interpreter  # type: ignore
+import tensorflow as tf
+
+Interpreter = tf.lite.Interpreter
 
 # ---------------------------------------------------------------------------
 # Optional Postgres (Neon) support. If DATABASE_URL isn't set, history
