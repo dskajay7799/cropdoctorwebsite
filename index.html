@@ -347,12 +347,6 @@ footer { text-align: center; padding: 20px; color: var(--text-muted); font-size:
         <option value="hi">हिंदी (Hindi)</option>
       </select>
     </div>
-    <div class="settings-row">
-      <label class="field-label" data-i18n="settings_api_url">Backend API URL</label>
-      <input type="text" id="api-url-input" placeholder="https://your-backend.onrender.com">
-      <button class="btn btn-secondary" id="btn-save-api" data-i18n="settings_save">Save</button>
-      <p class="muted" id="api-status"></p>
-    </div>
   </section>
 
 </main>
@@ -417,7 +411,7 @@ const TRANSLATIONS = {
     intelligence_title: "Diagnosis & Crop Intelligence", intel_diagnosis_title: "🩺 Current Diagnosis",
     intel_diagnosis_empty: "No recent diagnosis available. Analyze a crop to see the full diagnosis here.",
     intel_learn_title: "Learn More", intel_learn_empty: "Analyze a crop to get educational links.",
-    settings_title: "Settings", settings_language: "Language", settings_api_url: "Backend API URL", settings_save: "Save",
+    settings_title: "Settings", settings_language: "Language",
     footer_text: "Crop Doctor — AI-powered crop disease diagnosis.",
     crop_apple: "Apple", crop_corn: "Corn (Maize)", crop_grape: "Grape", crop_pepper: "Pepper (Bell)",
     crop_potato: "Potato", crop_tomato: "Tomato", crop_wheat: "Wheat", crop_rice: "Rice",
@@ -458,7 +452,7 @@ const TRANSLATIONS = {
     intelligence_title: "నిర్ధారణ & పంట సమాచారం", intel_diagnosis_title: "🩺 ప్రస్తుత నిర్ధారణ",
     intel_diagnosis_empty: "ఇటీవలి నిర్ధారణ ఏదీ లేదు. పూర్తి నిర్ధారణ చూడటానికి పంటను పరిశీలించండి.",
     intel_learn_title: "మరింత తెలుసుకోండి", intel_learn_empty: "విద్యా లింక్‌ల కోసం పంటను పరిశీలించండి.",
-    settings_title: "సెట్టింగ్‌లు", settings_language: "భాష", settings_api_url: "బ్యాకెండ్ API URL", settings_save: "సేవ్ చేయండి",
+    settings_title: "సెట్టింగ్‌లు", settings_language: "భాష",
     footer_text: "క్రాప్ డాక్టర్ — AI ఆధారిత పంట వ్యాధి నిర్ధారణ.",
     crop_apple: "ఆపిల్", crop_corn: "మొక్కజొన్న", crop_grape: "ద్రాక్ష", crop_pepper: "మిరపకాయ",
     crop_potato: "బంగాళదుంప", crop_tomato: "టమాటా", crop_wheat: "గోధుమ", crop_rice: "వరి",
@@ -499,7 +493,7 @@ const TRANSLATIONS = {
     intelligence_title: "निदान और फसल जानकारी", intel_diagnosis_title: "🩺 वर्तमान निदान",
     intel_diagnosis_empty: "हाल ही में कोई निदान उपलब्ध नहीं है। पूरा निदान देखने के लिए फसल जांचें।",
     intel_learn_title: "और जानें", intel_learn_empty: "शैक्षणिक लिंक के लिए फसल जांचें।",
-    settings_title: "सेटिंग्स", settings_language: "भाषा", settings_api_url: "बैकएंड API URL", settings_save: "सेव करें",
+    settings_title: "सेटिंग्स", settings_language: "भाषा",
     footer_text: "क्रॉप डॉक्टर — AI-संचालित फसल रोग निदान।",
     crop_apple: "सेब", crop_corn: "मक्का", crop_grape: "अंगूर", crop_pepper: "शिमला मिर्च",
     crop_potato: "आलू", crop_tomato: "टमाटर", crop_wheat: "गेहूं", crop_rice: "चावल",
@@ -1022,25 +1016,12 @@ document.getElementById("btn-stop-speak").addEventListener("click", () => {
   document.getElementById("btn-stop-speak").hidden = true;
 });
 
-/* ---------------------------- Settings ---------------------------- */
-document.getElementById("api-url-input").value = state.apiUrl;
-
-document.getElementById("btn-save-api").addEventListener("click", () => {
-  const val = document.getElementById("api-url-input").value.trim().replace(/\/$/, "");
-  state.apiUrl = val;
-  localStorage.setItem("cd_api_url", val);
-  document.getElementById("api-status").textContent = "Saved. Checking connection…";
-  checkApiHealth();
-});
-
+/* ---------------------------- Backend health (silent, no UI) ---------------------------- */
 async function checkApiHealth() {
-  const statusEl = document.getElementById("api-status");
   try {
-    const res = await fetch(`${state.apiUrl}/api/health`);
-    const data = await res.json();
-    statusEl.textContent = `Connected. Model loaded: ${data.model_loaded ? "yes" : "no"}. Database connected: ${data.database_connected ? "yes" : "no"}.`;
+    await fetch(`${state.apiUrl}/api/health`);
   } catch {
-    statusEl.textContent = "Couldn't reach the backend at that URL.";
+    /* backend unreachable — analyze/chat/history calls will surface this to the user as needed */
   }
 }
 
