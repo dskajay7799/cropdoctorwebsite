@@ -279,7 +279,7 @@ footer { text-align: center; padding: 20px; color: var(--text-muted); font-size:
   <!-- ================= AI ASSISTANT ================= -->
   <section id="tab-assistant" class="tab-panel">
     <h2>Crop Doctor AI Assistant</h2>
-    <p class="muted">Ask about your latest diagnosis, symptoms, prevention, or general crop health. Powered by a free AI model on the backend — the ML diagnosis above always stays the source of truth.</p>
+    <p class="muted">Ask about your latest diagnosis, symptoms, prevention, or general crop health. Powered by the backend AI Assistant — the ML diagnosis above always stays the source of truth.</p>
 
     <div class="chat-box" id="chat-box">
       <div class="chat-msg bot">Hi! Analyze a crop first, then ask me things like "why did this happen?" or "how do I prevent it?"</div>
@@ -339,9 +339,6 @@ footer { text-align: center; padding: 20px; color: var(--text-muted); font-size:
       <button class="btn btn-secondary" id="btn-save-api">Save</button>
       <p class="muted" id="api-status"></p>
     </div>
-    <div class="settings-row">
-      <p class="muted">The AI Assistant runs on your backend (free, via Groq) — nothing to configure here.</p>
-    </div>
   </section>
 
 </main>
@@ -351,7 +348,7 @@ footer { text-align: center; padding: 20px; color: var(--text-muted); font-size:
 </footer>
 
 <script > 
-  /* ==========================================================================
+/* ==========================================================================
    Crop Doctor — Frontend logic
    Talks to the Flask backend (app.py) for real MobileNetV2 inference and
    Neon-backed history. Falls back to browser localStorage for history if
@@ -361,11 +358,7 @@ footer { text-align: center; padding: 20px; color: var(--text-muted); font-size:
 const DEFAULT_API_URL = "https://cropdoctorwebsite.onrender.com";
 
 const state = {
-  apiUrl: (() => {
-    const saved = localStorage.getItem("cd_api_url");
-    if (!saved || saved.includes("YOUR-BACKEND")) return DEFAULT_API_URL;
-    return saved;
-  })(),
+  apiUrl: localStorage.getItem("cd_api_url") || DEFAULT_API_URL,
   selectedCrop: null,
   selectedFile: null,
   lastResult: null,
@@ -776,7 +769,7 @@ function fetchWeatherRisk() {
 }
 fetchWeatherRisk();
 
-/* ---------------------------- AI Assistant (Groq backend, browser Web Speech) ---------------------------- */
+/* ---------------------------- AI Assistant (Groq via backend, browser Web Speech) ---------------------------- */
 const chatBox = document.getElementById("chat-box");
 let diagnosisContext = null;
 
@@ -803,28 +796,37 @@ async function sendChat() {
   addChatMsg("user", question);
   input.value = "";
 
-  const thinkingId = "thinking-" + Date.now();
-  const thinkingDiv = document.createElement("div");
-  thinkingDiv.className = "chat-msg bot";
-  thinkingDiv.id = thinkingId;
-  thinkingDiv.textContent = "Thinking…";
-  chatBox.appendChild(thinkingDiv);
-  chatBox.scrollTop = chatBox.scrollHeight;
-
   try {
     const res = await fetch(`${state.apiUrl}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, diagnosis: diagnosisContext }),
+      body: JSON.stringify({
+        question,
+        context: diagnosisContext,
+      }),
     });
     const data = await res.json();
-    document.getElementById(thinkingId)?.remove();
-    addChatMsg("bot", data.answer || "I couldn't generate a response right now.");
-    if (data.answer) speak(data.answer);
+    if (data.status === "success") {
+      addChatMsg("bot", data.answer);
+      speak(data.answer);
+    } else {
+      addChatMsg("bot", data.message || offlineAssistantAnswer(question));
+    }
   } catch {
-    document.getElementById(thinkingId)?.remove();
-    addChatMsg("bot", "Couldn't reach the AI Assistant service. Check your internet connection or the Backend API URL in Settings.");
+    addChatMsg("bot", "Couldn't reach the AI Assistant right now. Check your internet connection, or the Backend API URL in Settings.");
   }
+}
+
+function offlineAssistantAnswer(question) {
+  if (!diagnosisContext) {
+    return "Please analyze a crop image first — then I can explain the diagnosis for you.";
+  }
+  const q = question.toLowerCase();
+  if (q.includes("why")) return `${diagnosisContext.disease} typically develops from environmental conditions like humidity and moisture on the leaf surface. See the Prevention section in your results for how to reduce risk.`;
+  if (q.includes("prevent")) return `Prevention tips: ${diagnosisContext.prevention.join(" ")}`;
+  if (q.includes("symptom")) return `Symptoms to watch for: ${diagnosisContext.symptoms.join(" ")}`;
+  if (q.includes("monitor")) return `Keep checking affected leaves every few days, and watch nearby healthy plants for early symptoms.`;
+  return `Recommended actions: ${diagnosisContext.recommendations.join(" ")}`;
 }
 
 /* ---------- Voice (Web Speech API, with graceful fallback) ---------- */
