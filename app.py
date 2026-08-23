@@ -467,6 +467,22 @@ def crops():
     return jsonify(ALL_CROPS)
 
 
+# TEMP DEBUG: catch any unhandled crash in any route and return the real
+# error as JSON (visible in the browser Network tab) instead of Flask's
+# default blank/HTML 500 page. Remove once everything is confirmed working.
+@app.errorhandler(Exception)
+def handle_any_error(exc):
+    import traceback
+    tb = traceback.format_exc()
+    app.logger.error(f"UNHANDLED ERROR: {exc!r}\n{tb}")
+    return jsonify({
+        "status": "error",
+        "message": "Something went wrong on the server.",
+        "debug_exception": repr(exc),
+        "debug_traceback": tb[-1500:],
+    }), 500
+
+
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
     crop_id = request.form.get("crop", "")
@@ -496,10 +512,12 @@ def analyze():
     image_bytes = image_file.read()
     try:
         probabilities = run_inference(image_bytes)
-    except Exception:
+    except Exception as exc:
+        app.logger.error(f"INFERENCE ERROR: {exc!r}")
         return jsonify({
             "status": "image_unreadable",
             "message": "That image couldn't be read. Please try a clearer photo.",
+            "debug_exception": repr(exc),
         }), 400
 
     best_index = int(np.argmax(probabilities))
@@ -614,7 +632,17 @@ def chat():
             },
             timeout=30,
         )
-        resp.raise_for_status()
+        # TEMP DEBUG: surface Groq's exact error body so it's visible in the
+        # browser Network tab without needing to check Render server logs.
+        # Remove the "debug" fields below once chat is confirmed working.
+        if resp.status_code >= 400:
+            app.logger.error(f"GROQ ERROR {resp.status_code}: {resp.text}")
+            return jsonify({
+                "status": "error",
+                "message": "The AI Assistant is temporarily unavailable. Please try again in a moment.",
+                "debug_status_code": resp.status_code,
+                "debug_body": resp.text[:800],
+            }), 503
         payload = resp.json()
         answer = payload["choices"][0]["message"]["content"].strip()
         return jsonify({"status": "success", "answer": answer})
@@ -623,6 +651,7 @@ def chat():
         return jsonify({
             "status": "error",
             "message": "The AI Assistant is temporarily unavailable. Please try again in a moment.",
+            "debug_exception": repr(exc),
         }), 503
 
 
