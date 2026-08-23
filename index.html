@@ -333,10 +333,10 @@ footer { text-align: center; padding: 20px; color: var(--text-muted); font-size:
         <option value="te">తెలుగు (Telugu)</option>
       </select>
     </div>
-    <div class="settings-row">
-      <label class="field-label">Backend Status</label>
-<p class="muted" id="api-status">Checking backend connection...</p>
-    </div>
+   <div class="settings-row">
+  <label class="field-label">Backend Status</label>
+  <p class="muted" id="api-status">Checking backend connection...</p>
+   </div>
     <div class="settings-row">
       <p class="muted">The AI Assistant runs on your backend (free, via Groq) — nothing to configure here.</p>
     </div>
@@ -483,29 +483,79 @@ async function runAnalysis() {
   const resultStep = document.getElementById("result-step");
   const loading = document.getElementById("analysis-loading");
   const resultBox = document.getElementById("analysis-result");
+
   resultStep.hidden = false;
   loading.hidden = false;
   resultBox.innerHTML = "";
+
+  if (!state.selectedCrop) {
+    loading.hidden = true;
+    resultBox.innerHTML =
+      `<div class="error-box">Please select a crop first.</div>`;
+    return;
+  }
+
+  if (!state.selectedFile) {
+    loading.hidden = true;
+    resultBox.innerHTML =
+      `<div class="error-box">Please upload an image first.</div>`;
+    return;
+  }
 
   const formData = new FormData();
   formData.append("crop", state.selectedCrop);
   formData.append("image", state.selectedFile);
 
   try {
-    const res = await fetch(`${state.apiUrl}/api/analyze`, { method: "POST", body: formData });
-    const data = await res.json();
+    console.log("Sending image to:", `${state.apiUrl}/api/analyze`);
+    console.log("Crop:", state.selectedCrop);
+    console.log("File:", state.selectedFile.name);
+
+    const res = await fetch(`${state.apiUrl}/api/analyze`, {
+      method: "POST",
+      body: formData
+    });
+
+    const text = await res.text();
+
+    console.log("Analyze HTTP status:", res.status);
+    console.log("Analyze response:", text);
+
+    if (!res.ok) {
+      throw new Error(`Backend returned HTTP ${res.status}: ${text}`);
+    }
+
+    let data;
+
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error("Backend did not return valid JSON.");
+    }
+
     loading.hidden = true;
+
     renderResult(data);
+
     if (data.status === "success") {
       state.lastResult = data;
+
       await saveHistoryRecord(data);
       updateDashboard();
       updateIntelligence(data);
     }
+
   } catch (err) {
+    console.error("ANALYZE ERROR:", err);
+
     loading.hidden = true;
-    resultBox.innerHTML = `<div class="error-box"><strong>Couldn't reach the AI service.</strong><br>
-      Check your internet connection, or set the correct Backend API URL in Settings.</div>`;
+
+    resultBox.innerHTML = `
+      <div class="error-box">
+        <strong>Crop analysis failed.</strong><br><br>
+        ${err.message}
+      </div>
+    `;
   }
 }
 
@@ -793,31 +843,73 @@ document.getElementById("chat-input").addEventListener("keydown", e => { if (e.k
 async function sendChat() {
   const input = document.getElementById("chat-input");
   const question = input.value.trim();
+
   if (!question) return;
+
   addChatMsg("user", question);
   input.value = "";
 
   const thinkingId = "thinking-" + Date.now();
+
   const thinkingDiv = document.createElement("div");
   thinkingDiv.className = "chat-msg bot";
   thinkingDiv.id = thinkingId;
   thinkingDiv.textContent = "Thinking…";
+
   chatBox.appendChild(thinkingDiv);
   chatBox.scrollTop = chatBox.scrollHeight;
 
   try {
+    console.log("Sending chat request to:", `${state.apiUrl}/api/chat`);
+
     const res = await fetch(`${state.apiUrl}/api/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, diagnosis: diagnosisContext }),
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        question: question,
+        diagnosis: diagnosisContext
+      })
     });
-    const data = await res.json();
+
+    const text = await res.text();
+
+    console.log("Chat HTTP status:", res.status);
+    console.log("Chat response:", text);
+
+    if (!res.ok) {
+      throw new Error(`Backend returned HTTP ${res.status}: ${text}`);
+    }
+
+    let data;
+
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error("Backend did not return valid JSON.");
+    }
+
     document.getElementById(thinkingId)?.remove();
-    addChatMsg("bot", data.answer || "I couldn't generate a response right now.");
-    if (data.answer) speak(data.answer);
-  } catch {
+
+    addChatMsg(
+      "bot",
+      data.answer || "The AI backend returned no answer."
+    );
+
+    if (data.answer) {
+      speak(data.answer);
+    }
+
+  } catch (err) {
+    console.error("CHAT ERROR:", err);
+
     document.getElementById(thinkingId)?.remove();
-    addChatMsg("bot", "Couldn't reach the AI Assistant service. Check your internet connection or the Backend API URL in Settings.");
+
+    addChatMsg(
+      "bot",
+      `AI Assistant failed: ${err.message}`
+    );
   }
 }
 
@@ -852,8 +944,8 @@ document.getElementById("btn-stop-speak").addEventListener("click", () => {
   speechSynthesis.cancel();
   document.getElementById("btn-stop-speak").hidden = true;
 });
-
 /* ---------------------------- Settings ---------------------------- */
+
 async function checkApiHealth() {
   const statusEl = document.getElementById("api-status");
 
@@ -861,7 +953,7 @@ async function checkApiHealth() {
     const res = await fetch(`${state.apiUrl}/api/health`);
 
     if (!res.ok) {
-      throw new Error("Backend error");
+      throw new Error(`HTTP ${res.status}`);
     }
 
     const data = await res.json();
@@ -874,29 +966,18 @@ async function checkApiHealth() {
       }`;
 
   } catch (error) {
-    statusEl.textContent = "Backend unavailable.";
+    console.error("Health check failed:", error);
+    statusEl.textContent =
+      "Backend unavailable. Check the backend URL and Render service.";
   }
 }
 
-checkApiHealth();
-loadHistory();
-
-async function checkApiHealth() {
-  const statusEl = document.getElementById("api-status");
-  try {
-    const res = await fetch(`${state.apiUrl}/api/health`);
-    const data = await res.json();
-    statusEl.textContent = `Connected. Model loaded: ${data.model_loaded ? "yes" : "no"}. Database connected: ${data.database_connected ? "yes" : "no"}.`;
-  } catch {
-    statusEl.textContent = "Couldn't reach the backend at that URL.";
-  }
-}
 
 /* ---------------------------- Init ---------------------------- */
+
 if (!localStorage.getItem("cd_api_url")) {
   localStorage.setItem("cd_api_url", state.apiUrl);
 }
-document.getElementById("api-url-input").value = state.apiUrl;
 checkApiHealth();
 loadHistory();
 
