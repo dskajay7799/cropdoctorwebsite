@@ -693,6 +693,7 @@ function updateDashboard() {
 }
 
 function renderConfidenceChart() {
+  if (typeof Chart === "undefined") return;
   const ctx = document.getElementById("chart-confidence");
   const h = state.history[0];
   const healthy = h ? (h.disease.toLowerCase() === "healthy" ? h.confidence : 100 - h.confidence) : 50;
@@ -709,6 +710,7 @@ function renderConfidenceChart() {
 }
 
 function renderHistoryChart() {
+  if (typeof Chart === "undefined") return;
   const ctx = document.getElementById("chart-history");
   if (!ctx) return;
   const recent = [...state.history].reverse().slice(-15);
