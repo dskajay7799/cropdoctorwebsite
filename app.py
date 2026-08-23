@@ -928,12 +928,13 @@ def chat():
         resp.raise_for_status()
         answer = resp.json()["choices"][0]["message"]["content"].strip()
         return jsonify({"answer": answer, "connected": True})
-    except Exception:
+    except Exception as e:
+        print("GROQ ERROR:", repr(e), flush=True)
+
         return jsonify({
             "answer": "The AI Assistant is temporarily unavailable. Please try again in a moment.",
             "connected": False,
         }), 503
-
 
 load_model()
 init_db()
