@@ -62,7 +62,7 @@ FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "*")
 # Groq (cloud LLM) settings for the AI Assistant chat feature.
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": FRONTEND_ORIGIN}})
