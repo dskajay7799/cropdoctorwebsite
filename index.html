@@ -363,7 +363,6 @@ const DEFAULT_API_URL = "https://cropdoctorwebsite.onrender.com";
 const state = {
   apiUrl: (() => {
     const saved = localStorage.getItem("cd_api_url");
-    // Ignore stale/placeholder values saved by earlier broken versions of this site.
     if (!saved || saved.includes("YOUR-BACKEND")) return DEFAULT_API_URL;
     return saved;
   })(),
