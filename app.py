@@ -30,6 +30,7 @@ import json
 import uuid
 import datetime
 
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from PIL import Image
@@ -57,6 +58,14 @@ except ImportError:  # pragma: no cover
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "crop_doctor_model.tflite")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "*")
+
+# Free AI Assistant backend (Groq — no cost, no credit card). Get a free
+# key at https://console.groq.com/keys and set it as GROQ_API_KEY in
+# Render's environment variables. The key lives only on the server —
+# it is never sent to or visible in the frontend.
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": FRONTEND_ORIGIN}})
@@ -372,14 +381,33 @@ _output_details = None
 
 def load_model():
     global _interpreter, _input_details, _output_details
+
     if _interpreter is not None:
         return
+
     if not os.path.exists(MODEL_PATH):
+        print("MODEL FILE NOT FOUND:", MODEL_PATH)
         return
-    _interpreter = Interpreter(model_path=MODEL_PATH)
-    _interpreter.allocate_tensors()
-    _input_details = _interpreter.get_input_details()
-    _output_details = _interpreter.get_output_details()
+
+    try:
+        _interpreter = Interpreter(model_path=MODEL_PATH)
+        _interpreter.allocate_tensors()
+
+        _input_details = _interpreter.get_input_details()
+        _output_details = _interpreter.get_output_details()
+
+        print("========================================")
+        print("CROP DOCTOR MODEL LOADED")
+        print("MODEL PATH:", MODEL_PATH)
+        print("INPUT DETAILS:", _input_details)
+        print("OUTPUT DETAILS:", _output_details)
+        print("========================================")
+
+    except Exception as e:
+        print("MODEL LOAD ERROR:", repr(e))
+        _interpreter = None
+        _input_details = None
+        _output_details = None
 
 
 def confidence_tier(confidence: float) -> str:
@@ -397,18 +425,210 @@ def severity_from_tier(tier: str, is_healthy: bool) -> str:
 
 
 def run_inference(image_bytes: bytes):
-    """Runs the real MobileNetV2 tflite model on the given image bytes.
-    Returns the raw 27-length probability array."""
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    img = img.resize((224, 224))
-    arr = np.asarray(img, dtype=np.float32) / 255.0
+    """
+    Runs the real TFLite model.
+
+    The preprocessing is determined from the actual TFLite
+    input tensor instead of assuming a fixed dtype.
+    """
+
+    if _interpreter is None:
+        raise RuntimeError("TFLite model is not loaded.")
+
+    if not _input_details or not _output_details:
+        raise RuntimeError("TFLite model tensor information is unavailable.")
+
+    # ---------------------------------------------------------
+    # 1. READ IMAGE
+    # ---------------------------------------------------------
+    try:
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception as e:
+        raise RuntimeError(f"Invalid image file: {e}")
+
+    # ---------------------------------------------------------
+    # 2. READ ACTUAL MODEL INPUT SPECIFICATION
+    # ---------------------------------------------------------
+    input_info = _input_details[0]
+
+    input_index = input_info["index"]
+    input_shape = input_info["shape"]
+    input_dtype = input_info["dtype"]
+
+    print("MODEL INPUT SHAPE:", input_shape)
+    print("MODEL INPUT DTYPE:", input_dtype)
+    print("MODEL INPUT QUANTIZATION:", input_info.get("quantization"))
+
+    # Expected shape should normally be:
+    # [1, 224, 224, 3]
+
+    if len(input_shape) != 4:
+        raise RuntimeError(
+            f"Unexpected model input shape: {input_shape}"
+        )
+
+    height = int(input_shape[1])
+    width = int(input_shape[2])
+    channels = int(input_shape[3])
+
+    if channels != 3:
+        raise RuntimeError(
+            f"Model expects {channels} channels instead of RGB 3 channels."
+        )
+
+    # ---------------------------------------------------------
+    # 3. RESIZE TO ACTUAL MODEL SIZE
+    # ---------------------------------------------------------
+    img = img.resize((width, height))
+
+    arr = np.asarray(img)
+
+    # ---------------------------------------------------------
+    # 4. PREPROCESS ACCORDING TO MODEL DTYPE
+    # ---------------------------------------------------------
+    if input_dtype == np.float32:
+
+        # Float32 MobileNetV2 model.
+        # This is correct ONLY if the training pipeline
+        # used pixel values in the 0-1 range.
+        arr = arr.astype(np.float32) / 255.0
+
+    elif input_dtype == np.uint8:
+
+        # UINT8 quantized model.
+        arr = arr.astype(np.uint8)
+
+    elif input_dtype == np.int8:
+
+        # INT8 quantized model.
+        scale, zero_point = input_info.get("quantization", (0.0, 0))
+
+        if scale == 0:
+            raise RuntimeError(
+                "Invalid INT8 quantization scale."
+            )
+
+        arr = arr.astype(np.float32)
+
+        arr = np.round(
+            arr / scale + zero_point
+        )
+
+        arr = np.clip(
+            arr,
+            -128,
+            127
+        ).astype(np.int8)
+
+    else:
+        raise RuntimeError(
+            f"Unsupported model input dtype: {input_dtype}"
+        )
+
+    # ---------------------------------------------------------
+    # 5. ADD BATCH DIMENSION
+    # ---------------------------------------------------------
     arr = np.expand_dims(arr, axis=0)
 
-    _interpreter.set_tensor(_input_details[0]["index"], arr)
-    _interpreter.invoke()
-    output = _interpreter.get_tensor(_output_details[0]["index"])
-    return output[0]
+    print("FINAL INPUT SHAPE:", arr.shape)
+    print("FINAL INPUT DTYPE:", arr.dtype)
 
+    # ---------------------------------------------------------
+    # 6. VERIFY SHAPE BEFORE SENDING TO TFLITE
+    # ---------------------------------------------------------
+    expected_shape = tuple(input_shape)
+    actual_shape = tuple(arr.shape)
+
+    if actual_shape != expected_shape:
+        raise RuntimeError(
+            f"Input shape mismatch. "
+            f"Model expects {expected_shape}, "
+            f"but received {actual_shape}."
+        )
+
+    # ---------------------------------------------------------
+    # 7. RUN TFLITE
+    # ---------------------------------------------------------
+    _interpreter.set_tensor(
+        input_index,
+        arr
+    )
+
+    _interpreter.invoke()
+
+    # ---------------------------------------------------------
+    # 8. GET MODEL OUTPUT
+    # ---------------------------------------------------------
+    output_info = _output_details[0]
+
+    output = _interpreter.get_tensor(
+        output_info["index"]
+    )
+
+    output = np.asarray(output)
+
+    print("RAW OUTPUT SHAPE:", output.shape)
+    print("RAW OUTPUT DTYPE:", output.dtype)
+    print("RAW OUTPUT:", output)
+
+    # Remove batch dimension
+    output = output[0]
+
+    # ---------------------------------------------------------
+    # 9. HANDLE QUANTIZED OUTPUT
+    # ---------------------------------------------------------
+    output_dtype = output_info["dtype"]
+
+    if output_dtype == np.uint8 or output_dtype == np.int8:
+
+        scale, zero_point = output_info.get(
+            "quantization",
+            (0.0, 0)
+        )
+
+        if scale != 0:
+            output = (
+                output.astype(np.float32) - zero_point
+            ) * scale
+        else:
+            output = output.astype(np.float32)
+
+    else:
+        output = output.astype(np.float32)
+
+    # Flatten if necessary
+    output = output.flatten()
+
+    # ---------------------------------------------------------
+    # 10. VERIFY 27 OUTPUT CLASSES
+    # ---------------------------------------------------------
+    if len(output) != len(LABELS):
+        raise RuntimeError(
+            f"Model output has {len(output)} values, "
+            f"but backend has {len(LABELS)} labels."
+        )
+
+    # ---------------------------------------------------------
+    # 11. ENSURE WE HAVE PROBABILITIES
+    # ---------------------------------------------------------
+    total = float(np.sum(output))
+
+    if (
+        np.min(output) < 0
+        or np.max(output) > 1
+        or not np.isclose(total, 1.0, atol=0.05)
+    ):
+        # Treat output as logits and apply softmax.
+        shifted = output - np.max(output)
+
+        exp_output = np.exp(shifted)
+
+        output = exp_output / np.sum(exp_output)
+
+    print("FINAL PROBABILITIES:", output)
+    print("PROBABILITY SUM:", float(np.sum(output)))
+
+    return output
 
 # ---------------------------------------------------------------------------
 # Database (Neon Postgres) — analysis history
@@ -488,16 +708,35 @@ def analyze():
         }), 503
 
     image_bytes = image_file.read()
+
     try:
         probabilities = run_inference(image_bytes)
-    except Exception:
+    except Exception as e:
+        print("INFERENCE ERROR:", str(e))
         return jsonify({
-            "status": "image_unreadable",
-            "message": "That image couldn't be read. Please try a clearer photo.",
-        }), 400
+            "status": "inference_error",
+            "message": "The AI model could not analyze this image.",
+            "error": str(e)
+        }), 500
 
     best_index = int(np.argmax(probabilities))
     confidence = float(probabilities[best_index])
+
+    print("========================================")
+    print("PREDICTION")
+    print("BEST INDEX:", best_index)
+    print("LABEL:", LABELS[best_index])
+    print("CONFIDENCE:", confidence)
+    print("CONFIDENCE %:", confidence * 100)
+    print("========================================")
+
+    if confidence < 0.40:
+        return jsonify({
+            "status": "low_confidence",
+            "message": "The model is not confident enough about this image. Please upload a clear close-up photo of the leaf.",
+            "confidence": round(confidence * 100, 1),
+        })
+
     raw_label = LABELS[best_index]
     parts = raw_label.split("___")
     predicted_crop_raw = parts[0]
@@ -621,6 +860,79 @@ def clear_history():
         cur.execute("DELETE FROM analysis_history;")
     conn.close()
     return jsonify({"cleared": True})
+
+
+@app.route("/api/chat", methods=["POST"])
+def chat():
+    """Farmer-friendly AI Assistant, backed by Groq's free LLM API.
+
+    The ML diagnosis (if any) is passed in as context and the model is
+    explicitly told it is the source of truth — the LLM explains it, it
+    never invents or overrides a diagnosis.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    question = (data.get("question") or "").strip()
+    diagnosis = data.get("diagnosis")  # optional dict from a prior /api/analyze call
+
+    if not question:
+        return jsonify({"error": "No question provided."}), 400
+
+    if not GROQ_API_KEY:
+        return jsonify({
+            "answer": "The AI Assistant isn't connected yet. Add a free GROQ_API_KEY "
+                      "(from console.groq.com) to the backend's environment variables on Render.",
+            "connected": False,
+        })
+
+    if diagnosis:
+        context = (
+            f"Crop: {diagnosis.get('crop')}\n"
+            f"Disease: {diagnosis.get('disease')}\n"
+            f"Confidence: {diagnosis.get('confidence')}%\n"
+            f"Severity: {diagnosis.get('severity')}\n"
+            f"Symptoms: {', '.join(diagnosis.get('symptoms', []))}\n"
+            f"Recommendations: {', '.join(diagnosis.get('recommendations', []))}\n"
+            f"Prevention: {', '.join(diagnosis.get('prevention', []))}"
+        )
+    else:
+        context = "No diagnosis has been run yet."
+
+    system_prompt = (
+        "You are Crop Doctor's AI Assistant, helping farmers understand a plant disease "
+        "diagnosis in simple, friendly, non-technical language. "
+        "The diagnosis below came from a real trained ML model and is the ONLY source of "
+        "truth for what disease was detected — never contradict it, never invent a "
+        "different crop or disease. You only explain, advise, and answer follow-up "
+        "questions about it. Keep answers short (2-5 sentences) and practical.\n\n"
+        f"Current diagnosis:\n{context}"
+    )
+
+    try:
+        resp = requests.post(
+            GROQ_URL,
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": GROQ_MODEL,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": question},
+                ],
+                "temperature": 0.4,
+                "max_tokens": 300,
+            },
+            timeout=20,
+        )
+        resp.raise_for_status()
+        answer = resp.json()["choices"][0]["message"]["content"].strip()
+        return jsonify({"answer": answer, "connected": True})
+    except Exception:
+        return jsonify({
+            "answer": "The AI Assistant is temporarily unavailable. Please try again in a moment.",
+            "connected": False,
+        }), 503
 
 
 load_model()
