@@ -3,363 +3,305 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Crop Doctor — AI Crop Health Assistant</title>
+<title>Crop Doctor — AI Crop Health Diagnosis</title>
+<meta name="description" content="Upload a leaf photo and get an instant, AI-assisted crop disease diagnosis across 8 crops and 39 conditions.">
 <style>
 :root {
-  --leaf-green: #2E7D4F;
-  --leaf-green-dark: #235e3c;
-  --leaf-green-light: #eaf7ef;
-  --earth-brown: #8D6E52;
-  --soil-cream: #F6F3EA;
-  --card-bg: #ffffff;
-  --text-dark: #1f2a22;
-  --text-muted: #6b7a70;
-  --danger: #c0392b;
-  --warning: #b8860b;
-  --border-soft: #e7e2d4;
-  --radius: 18px;
+  --green-900: #14301f;
+  --green-700: #1f5c37;
+  --green-600: #2a7a48;
+  --green-100: #e9f4ee;
+  --ink: #1b2320;
+  --ink-soft: #5b6660;
+  --line: #e3e2dc;
+  --bg: #faf9f6;
+  --card: #ffffff;
+  --amber: #9a6b12;
+  --amber-bg: #fbf2e0;
+  --red: #a3352b;
+  --red-bg: #fbeae8;
+  --radius: 14px;
+  --radius-lg: 20px;
   font-size: 16px;
 }
-
 * { box-sizing: border-box; }
-
 body {
   margin: 0;
-  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
-  background: var(--soil-cream);
-  color: var(--text-dark);
+  font-family: "Inter", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
 }
+p { line-height: 1.55; }
+.muted { color: var(--ink-soft); }
+a { color: var(--green-700); }
 
-.muted { color: var(--text-muted); font-size: 0.9rem; }
-
-/* ---------- Topbar ---------- */
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--card-bg);
-  padding: 14px 20px;
-  box-shadow: 0 2px 10px rgba(31,42,34,0.06);
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--border-soft);
+/* ---------- Header ---------- */
+header.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--card); padding: 16px 28px;
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 50; flex-wrap: wrap;
 }
-
-.brand { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 1.35rem; color: var(--leaf-green-dark); letter-spacing: -0.02em; }
-.brand-emoji {
-  font-size: 1.5rem;
-  background: var(--leaf-green-light);
-  width: 40px; height: 40px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 12px;
-}
-
-.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.brand { font-weight: 700; font-size: 1.2rem; letter-spacing: -0.01em; color: var(--green-900); }
+.brand span { color: var(--green-600); }
+nav.tabs { display: flex; gap: 2px; flex-wrap: wrap; }
 .tab {
-  border: none;
-  background: transparent;
-  padding: 10px 16px;
-  border-radius: 999px;
-  font-weight: 600;
-  cursor: pointer;
-  color: var(--text-muted);
-  font-size: 0.92rem;
+  border: none; background: transparent; padding: 9px 14px; border-radius: 8px;
+  font-weight: 600; font-size: 0.88rem; cursor: pointer; color: var(--ink-soft);
   transition: background 0.15s, color 0.15s;
 }
-.tab.active, .tab:hover { background: var(--leaf-green); color: white; }
-.menu-toggle { display: none; background: none; border: none; font-size: 1.6rem; cursor: pointer; color: var(--leaf-green-dark); }
+.tab.active { background: var(--green-100); color: var(--green-700); }
+.tab:hover:not(.active) { background: #f2f1ec; }
+.menu-toggle { display: none; background: none; border: 1px solid var(--line); border-radius: 8px; font-size: 1rem; padding: 6px 10px; cursor: pointer; }
 
 /* ---------- Layout ---------- */
-main { max-width: 1100px; margin: 0 auto; padding: 24px 20px 60px; }
+main { max-width: 960px; margin: 0 auto; padding: 32px 24px 72px; }
 .tab-panel { display: none; }
-.tab-panel.active { display: block; animation: fadein 0.25s ease; }
-@keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-
-h1, h2, h3 { color: var(--text-dark); }
-h2 { font-size: 1.6rem; margin-bottom: 6px; letter-spacing: -0.01em; }
+.tab-panel.active { display: block; animation: fadein 0.2s ease; }
+@keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+h1, h2, h3, h4 { color: var(--ink); margin: 0 0 6px; letter-spacing: -0.01em; }
+h2 { font-size: 1.4rem; }
+section.block { margin-bottom: 36px; }
 
 /* ---------- Hero ---------- */
-.hero {
-  text-align: center;
-  padding: 46px 20px;
-  border-radius: 24px;
-  background: linear-gradient(135deg, var(--leaf-green-light) 0%, #ffffff 70%);
-  border: 1px solid var(--border-soft);
-}
-.hero h1 { font-size: 2.6rem; font-weight: 900; color: var(--leaf-green-dark); margin: 0; letter-spacing: -0.03em; }
-.hero-sub { font-size: 1.15rem; color: var(--text-muted); margin: 8px 0 26px; }
-.hero-secondary { display: flex; justify-content: center; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+.hero { padding: 8px 0 28px; border-bottom: 1px solid var(--line); margin-bottom: 28px; }
+.hero h1 { font-size: 1.9rem; font-weight: 800; }
+.hero p { font-size: 1.02rem; color: var(--ink-soft); max-width: 60ch; margin: 6px 0 20px; }
+.hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
 /* ---------- Buttons ---------- */
 .btn {
-  border: none;
-  border-radius: 14px;
-  padding: 14px 22px;
-  font-size: 1rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 0.05s ease, opacity 0.2s, background 0.15s;
+  border: none; border-radius: 10px; padding: 11px 18px; font-size: 0.92rem;
+  font-weight: 600; cursor: pointer; transition: opacity 0.15s, background 0.15s;
+  font-family: inherit;
 }
-.btn:active { transform: scale(0.98); }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-primary { background: var(--leaf-green); color: white; }
-.btn-primary:hover:not(:disabled) { background: var(--leaf-green-dark); }
-.btn-secondary { background: var(--earth-brown); color: white; }
-.btn-secondary:hover:not(:disabled) { opacity: 0.9; }
-.btn-ghost { background: white; color: var(--leaf-green-dark); border: 2px solid var(--leaf-green); }
-.btn-large { font-size: 1.15rem; padding: 17px 32px; border-radius: 16px; }
-.btn-icon { background: var(--leaf-green-light); border-radius: 50%; width: 48px; height: 48px; font-size: 1.25rem; padding: 0; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary { background: var(--green-700); color: white; }
+.btn-primary:hover:not(:disabled) { background: var(--green-900); }
+.btn-secondary { background: var(--green-100); color: var(--green-700); }
+.btn-secondary:hover:not(:disabled) { background: #dcefe4; }
+.btn-outline { background: white; color: var(--ink); border: 1px solid var(--line); }
+.btn-outline:hover:not(:disabled) { border-color: var(--green-600); color: var(--green-700); }
+.btn-large { font-size: 1rem; padding: 13px 24px; }
+.btn-text { background: none; color: var(--red); font-weight: 600; padding: 4px 6px; }
 
 /* ---------- Cards ---------- */
-.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 24px; }
-.dash-card { background: var(--card-bg); border-radius: var(--radius); padding: 20px; box-shadow: 0 2px 10px rgba(31,42,34,0.05); border: 1px solid var(--border-soft); }
-.dash-card h3 { margin-top: 0; font-size: 1.02rem; display: flex; align-items: center; gap: 8px; }
-
-/* ---------- Analyze flow ---------- */
-.step-row { margin-top: 28px; }
-.field-label { display: block; font-weight: 700; margin-bottom: 10px; font-size: 1.05rem; }
-
-.crop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
-.crop-tile {
-  background: white; border: 2px solid var(--border-soft); border-radius: 16px; padding: 14px 8px;
-  text-align: center; cursor: pointer; font-weight: 600; transition: border-color 0.15s, transform 0.1s;
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 18px 20px;
 }
-.crop-tile:hover { transform: translateY(-2px); }
-.crop-tile .emoji { font-size: 2rem; display: block; margin-bottom: 6px; }
-.crop-tile.selected { border-color: var(--leaf-green); background: var(--leaf-green-light); }
+.card h3 { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); font-weight: 700; margin-bottom: 10px; }
+.card .value { font-size: 1.05rem; font-weight: 600; }
 
+/* ---------- Upload / analyze flow ---------- */
+.step-label { font-weight: 700; font-size: 0.95rem; margin: 0 0 10px; color: var(--ink); }
 .upload-area {
-  background: white; border: 3px dashed #c9c2ae; border-radius: var(--radius);
-  padding: 36px 20px; text-align: center; cursor: pointer; min-height: 220px;
-  display: flex; align-items: center; justify-content: center;
+  background: var(--card); border: 1.5px dashed #c7c3b8; border-radius: var(--radius-lg);
+  padding: 40px 20px; text-align: center; cursor: pointer; min-height: 200px;
+  display: flex; align-items: center; justify-content: center; transition: border-color 0.15s, background 0.15s;
 }
-.upload-area.dragover { border-color: var(--leaf-green); background: var(--leaf-green-light); }
-.upload-icon { font-size: 3rem; }
-.upload-btns { display: flex; gap: 10px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
-#preview-img { max-width: 100%; max-height: 340px; border-radius: 14px; }
+.upload-area.dragover { border-color: var(--green-600); background: var(--green-100); }
+.upload-btns { display: flex; gap: 10px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
+#preview-img { max-width: 100%; max-height: 360px; border-radius: 12px; display: block; margin: 0 auto; }
+.upload-note { font-size: 0.85rem; margin-top: 10px; }
 
-#btn-analyze { margin-top: 18px; width: 100%; max-width: 320px; }
+#btn-analyze { margin-top: 20px; }
 
-.loading-box { text-align: center; padding: 40px; }
-.spinner { width: 44px; height: 44px; border: 5px solid #ddd; border-top-color: var(--leaf-green); border-radius: 50%; margin: 0 auto 14px; animation: spin 0.8s linear infinite; }
+.loading-box { text-align: center; padding: 48px 20px; }
+.spinner { width: 34px; height: 34px; border: 3px solid var(--line); border-top-color: var(--green-600); border-radius: 50%; margin: 0 auto 16px; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- Result ---------- */
-.result-card { background: white; border-radius: var(--radius); padding: 24px; box-shadow: 0 2px 12px rgba(31,42,34,0.06); border: 1px solid var(--border-soft); }
-.result-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
-.status-pill { display: inline-block; padding: 6px 14px; border-radius: 999px; font-weight: 700; font-size: 0.85rem; margin-top: 6px; }
-.status-pill.healthy { background: #dcf5e3; color: var(--leaf-green-dark); }
-.status-pill.diseased { background: #fbe3e0; color: var(--danger); }
-.status-pill.warn { background: #fdf1d6; color: var(--warning); }
+.result-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 26px 28px; }
+.result-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.result-title { font-size: 1.5rem; font-weight: 800; margin: 0; }
+.result-crop { color: var(--ink-soft); font-weight: 500; font-size: 0.95rem; margin-top: 2px; }
+.pill { display: inline-block; padding: 5px 12px; border-radius: 999px; font-weight: 700; font-size: 0.78rem; margin-top: 8px; letter-spacing: 0.01em; }
+.pill.healthy { background: var(--green-100); color: var(--green-700); }
+.pill.monitor { background: var(--amber-bg); color: var(--amber); }
+.pill.attention { background: var(--amber-bg); color: var(--amber); }
+.pill.high { background: var(--red-bg); color: var(--red); }
+.confidence-block { text-align: right; min-width: 140px; }
+.confidence-num { font-size: 1.6rem; font-weight: 800; }
+.confidence-track { background: #eeece5; border-radius: 999px; height: 8px; margin-top: 8px; overflow: hidden; }
+.confidence-fill { height: 100%; background: var(--green-600); }
 
-.confidence-bar-track { background: #eee; border-radius: 999px; height: 14px; margin: 10px 0; overflow: hidden; }
-.confidence-bar-fill { height: 100%; background: var(--leaf-green); }
+.result-explanation { margin-top: 16px; font-size: 1rem; }
 
-.result-section { margin-top: 18px; }
-.result-section h4 { margin-bottom: 8px; }
+.notice-box { background: var(--amber-bg); border-left: 3px solid var(--amber); padding: 12px 16px; border-radius: 8px; margin-top: 16px; font-size: 0.92rem; }
+.error-box { background: var(--red-bg); border-left: 3px solid var(--red); padding: 12px 16px; border-radius: 8px; font-size: 0.92rem; }
+
+.result-section { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
+.result-section h4 { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-soft); margin-bottom: 10px; }
 .result-section ul { margin: 0; padding-left: 20px; }
+.result-section li { margin-bottom: 6px; }
+.result-section p { margin: 0; }
 
-.notice-box { background: #fdf1d6; border-left: 4px solid var(--warning); padding: 12px 16px; border-radius: 8px; margin-top: 14px; }
-.error-box { background: #fbe3e0; border-left: 4px solid var(--danger); padding: 12px 16px; border-radius: 8px; }
-
-.learn-links a { display: inline-block; margin-right: 14px; margin-top: 6px; color: var(--leaf-green-dark); font-weight: 600; text-decoration: none; }
-.learn-links a:hover { text-decoration: underline; }
+.disclaimer { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 0.85rem; color: var(--ink-soft); }
 
 /* ---------- Chat / Assistant ---------- */
-.chat-box { background: white; border-radius: var(--radius); padding: 16px; height: 340px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--border-soft); }
-.chat-msg { padding: 10px 14px; border-radius: 14px; max-width: 80%; line-height: 1.4; }
-.chat-msg.bot { background: var(--leaf-green-light); align-self: flex-start; }
-.chat-msg.user { background: var(--leaf-green); color: white; align-self: flex-end; }
-.chat-input-row { display: flex; gap: 8px; margin-top: 14px; align-items: center; flex-wrap: wrap; }
-.chat-input-row input[type=text] { flex: 1; padding: 14px; border-radius: 14px; border: 2px solid #ddd; font-size: 1rem; min-width: 160px; }
+.chat-box { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 16px; height: 360px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.chat-msg { padding: 10px 14px; border-radius: 12px; max-width: 82%; line-height: 1.45; font-size: 0.93rem; }
+.chat-msg.bot { background: var(--green-100); align-self: flex-start; color: var(--green-900); }
+.chat-msg.user { background: var(--green-700); color: white; align-self: flex-end; }
+.chat-input-row { display: flex; gap: 8px; margin-top: 12px; }
+.chat-input-row input[type=text] { flex: 1; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); font-size: 0.95rem; font-family: inherit; }
+.chat-input-row input[type=text]:focus { outline: 2px solid var(--green-600); outline-offset: -1px; }
 
 /* ---------- History ---------- */
-.history-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
-.history-list { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
-.history-item { background: white; border-radius: 14px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; box-shadow: 0 1px 6px rgba(0,0,0,0.05); border: 1px solid var(--border-soft); }
-.history-item .meta { color: var(--text-muted); font-size: 0.85rem; }
-.history-item button { background: none; border: none; color: var(--danger); font-weight: 700; cursor: pointer; }
-
-/* ---------- Diagnosis / Intelligence ---------- */
-.diagnosis-panel h4 { margin: 14px 0 6px; font-size: 0.95rem; color: var(--leaf-green-dark); }
-.diagnosis-panel ul { margin: 0; padding-left: 20px; }
+.history-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.history-list { display: flex; flex-direction: column; gap: 8px; }
+.history-item { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.history-item .meta { color: var(--ink-soft); font-size: 0.82rem; margin-top: 2px; }
 
 /* ---------- Settings ---------- */
-.settings-row { margin-bottom: 22px; max-width: 480px; }
-.settings-row input, .settings-row select { width: 100%; padding: 12px; border-radius: 10px; border: 2px solid #ddd; font-size: 1rem; margin-bottom: 8px; background: white; }
+.settings-row { margin-bottom: 20px; max-width: 460px; }
+.settings-row label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 0.9rem; }
+.settings-row input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); font-size: 0.92rem; font-family: inherit; }
+#api-status { font-size: 0.85rem; margin-top: 8px; color: var(--ink-soft); }
 
-footer { text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.85rem; }
+footer { text-align: center; padding: 26px; color: var(--ink-soft); font-size: 0.82rem; border-top: 1px solid var(--line); }
 
-/* ---------- Responsive ---------- */
 @media (max-width: 720px) {
-  .tabs { display: none; width: 100%; order: 3; }
-  .tabs.open { display: flex; flex-direction: column; }
+  nav.tabs { display: none; width: 100%; order: 3; flex-direction: column; padding-top: 8px; }
+  nav.tabs.open { display: flex; }
   .menu-toggle { display: block; }
-  .hero h1 { font-size: 2rem; }
+  .hero h1 { font-size: 1.5rem; }
+  .result-top { flex-direction: column; }
+  .confidence-block { text-align: left; }
 }
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 </head>
 <body>
 
 <header class="topbar">
-  <div class="brand">
-    <span class="brand-emoji">🌱</span>
-    <span class="brand-name">Crop Doctor</span>
-  </div>
+  <div class="brand">Crop <span>Doctor</span></div>
   <nav class="tabs" id="nav-tabs">
-    <button class="tab active" data-tab="home" data-i18n="nav_dashboard">Dashboard</button>
-    <button class="tab" data-tab="analyze" data-i18n="nav_analyze">Analyze Crop</button>
-    <button class="tab" data-tab="assistant" data-i18n="nav_assistant">AI Assistant</button>
-    <button class="tab" data-tab="history" data-i18n="nav_history">History</button>
-    <button class="tab" data-tab="intelligence" data-i18n="nav_intelligence">Diagnosis &amp; Intelligence</button>
-    <button class="tab" data-tab="settings" data-i18n="nav_settings">Settings</button>
+    <button class="tab active" data-tab="home">Home</button>
+    <button class="tab" data-tab="analyze">Diagnose</button>
+    <button class="tab" data-tab="assistant">Assistant</button>
+    <button class="tab" data-tab="history">History</button>
+    <button class="tab" data-tab="settings">Settings</button>
   </nav>
-  <button class="menu-toggle" id="menu-toggle" aria-label="Menu">☰</button>
+  <button class="menu-toggle" id="menu-toggle" aria-label="Menu">Menu</button>
 </header>
 
 <main>
 
-  <!-- ================= HOME / DASHBOARD ================= -->
+  <!-- ================= HOME ================= -->
   <section id="tab-home" class="tab-panel active">
     <div class="hero">
-      <h1>Crop Doctor</h1>
-      <p class="hero-sub" data-i18n="hero_sub">Your AI Crop Health Assistant</p>
-      <button class="btn btn-primary btn-large" data-goto="analyze"><span data-i18n="hero_analyze_btn">📷 Analyze a Crop</span></button>
-      <div class="hero-secondary">
-        <button class="btn btn-ghost" data-goto="assistant" data-i18n="hero_ask_ai">💬 Ask AI</button>
-        <button class="btn btn-ghost" data-goto="history" data-i18n="hero_history">🕘 View History</button>
-        <button class="btn btn-ghost" data-goto="intelligence" data-i18n="hero_intelligence">🩺 Diagnosis</button>
+      <h1>AI-assisted crop disease diagnosis</h1>
+      <p>Upload a photo of a leaf and get an instant assessment across 8 crops and 39 conditions — trained on a MobileNetV2 model with roughly 85% validation accuracy. Built to support field decisions, not replace expert judgment.</p>
+      <div class="hero-actions">
+        <button class="btn btn-primary btn-large" data-goto="analyze">Diagnose a crop</button>
+        <button class="btn btn-outline" data-goto="history">View history</button>
       </div>
     </div>
 
-    <div class="card-grid">
-      <div class="dash-card">
-        <h3 data-i18n="dash_latest_title">Latest Analysis</h3>
-        <div id="dash-latest" data-i18n="dash_latest_empty">No analysis yet. Analyze a crop to get started.</div>
+    <section class="block">
+      <div class="grid">
+        <div class="card">
+          <h3>Latest analysis</h3>
+          <div id="dash-latest" class="value">No analysis yet</div>
+        </div>
+        <div class="card">
+          <h3>Saved analyses</h3>
+          <div id="dash-history-count" class="value">0</div>
+        </div>
+        <div class="card">
+          <h3>Supported crops</h3>
+          <div class="value">Apple, Bell Pepper, Corn, Grape, Potato, Rice, Tomato, Wheat</div>
+        </div>
       </div>
-      <div class="dash-card">
-        <h3 data-i18n="dash_health_title">Crop Health</h3>
-        <canvas id="chart-confidence" height="160"></canvas>
-      </div>
-      <div class="dash-card">
-        <h3 data-i18n="dash_assistant_title">AI Assistant</h3>
-        <p data-i18n="dash_assistant_desc">Ask questions about any diagnosis in plain language.</p>
-        <button class="btn btn-secondary" data-goto="assistant" data-i18n="dash_assistant_btn">Open Assistant</button>
-      </div>
-      <div class="dash-card">
-        <h3 data-i18n="dash_history_title">Analysis History</h3>
-        <div id="dash-history-count">0 analyses saved</div>
-        <button class="btn btn-secondary" data-goto="history" data-i18n="dash_history_view">View All</button>
-      </div>
-    </div>
+    </section>
   </section>
 
   <!-- ================= ANALYZE ================= -->
   <section id="tab-analyze" class="tab-panel">
-    <h2 data-i18n="analyze_title">Analyze Crop</h2>
+    <section class="block">
+      <h2>Diagnose a crop</h2>
+      <p class="muted">Upload one clear photo of a single leaf. The model detects the crop and condition automatically.</p>
+    </section>
 
-    <div class="step-row" id="crop-select-step">
-      <label class="field-label" data-i18n="step1_label">1. Select your crop</label>
-      <div class="crop-grid" id="crop-grid"></div>
-    </div>
-
-    <div class="step-row" id="image-step">
-      <label class="field-label" data-i18n="step2_label">2. Upload a photo of the leaf</label>
+    <section class="block">
       <div class="upload-area" id="upload-area">
         <input type="file" id="file-input" accept="image/*" hidden>
         <div id="upload-placeholder">
-          <div class="upload-icon">📷</div>
-          <p><strong data-i18n="upload_tap">Tap to upload</strong> <span data-i18n="upload_or">or drag and drop an image</span></p>
-          <p class="muted" data-i18n="upload_hint">JPG or PNG, clear photo of a single leaf works best</p>
+          <p style="font-weight:700; margin-bottom:4px;">Upload a leaf photo</p>
+          <p class="muted" style="margin:0 0 4px;">Drag and drop, or choose a file</p>
+          <p class="muted upload-note">JPG or PNG · under 12MB · close-up of a single leaf works best</p>
           <div class="upload-btns">
-            <button class="btn btn-primary" id="btn-choose-file" data-i18n="choose_photo">Choose Photo</button>
-            <button class="btn btn-ghost" id="btn-camera" data-i18n="use_camera">Use Camera</button>
+            <button class="btn btn-primary" id="btn-choose-file">Choose photo</button>
+            <button class="btn btn-outline" id="btn-camera">Use camera</button>
           </div>
         </div>
         <img id="preview-img" hidden alt="Selected leaf preview">
       </div>
-      <button class="btn btn-primary btn-large" id="btn-analyze" disabled data-i18n="analyze_btn">Analyze</button>
-    </div>
+      <button class="btn btn-primary btn-large" id="btn-analyze" disabled>Run diagnosis</button>
+    </section>
 
-    <div class="step-row" id="result-step" hidden>
+    <section class="block" id="result-step" hidden>
       <div id="analysis-loading" hidden class="loading-box">
         <div class="spinner"></div>
-        <p data-i18n="analyzing">Running AI analysis…</p>
+        <p class="muted">Running AI analysis…</p>
       </div>
       <div id="analysis-result"></div>
-    </div>
+    </section>
   </section>
 
-  <!-- ================= AI ASSISTANT ================= -->
+  <!-- ================= ASSISTANT ================= -->
   <section id="tab-assistant" class="tab-panel">
-    <h2 data-i18n="assistant_title">Crop Doctor AI Assistant</h2>
-    <p class="muted" data-i18n="assistant_desc">Ask about your latest diagnosis, symptoms, prevention, or general crop health.</p>
-
+    <section class="block">
+      <h2>Assistant</h2>
+      <p class="muted">Ask about your latest diagnosis — symptoms, causes, treatment, or prevention.</p>
+    </section>
     <div class="chat-box" id="chat-box">
-      <div class="chat-msg bot" id="chat-seed-msg" data-i18n="assistant_seed">Hi! Analyze a crop first, then ask me things like "why did this happen?" or "how do I prevent it?"</div>
+      <div class="chat-msg bot" id="chat-seed-msg">Run a diagnosis first, then ask me things like "why did this happen?" or "how do I prevent it?"</div>
     </div>
-
     <div class="chat-input-row">
-      <button class="btn btn-icon" id="btn-mic" title="Speak">🎤</button>
-      <input type="text" id="chat-input" data-i18n-placeholder="chat_placeholder" placeholder="Type your question…">
-      <button class="btn btn-primary" id="btn-send-chat" data-i18n="chat_send">Send</button>
-      <button class="btn btn-icon" id="btn-stop-speak" title="Stop speaking" hidden>⏹️</button>
+      <input type="text" id="chat-input" placeholder="Type your question…">
+      <button class="btn btn-primary" id="btn-send-chat">Send</button>
     </div>
-    <div id="voice-fallback" class="muted" hidden data-i18n="voice_fallback">Voice input/output isn't supported in this browser — you can still type your questions.</div>
   </section>
 
   <!-- ================= HISTORY ================= -->
   <section id="tab-history" class="tab-panel">
     <div class="history-header">
-      <h2 data-i18n="history_title">Analysis History</h2>
-      <button class="btn btn-ghost" id="btn-clear-history" data-i18n="history_clear">Clear All</button>
+      <h2>Analysis history</h2>
+      <button class="btn btn-outline" id="btn-clear-history">Clear all</button>
     </div>
-    <canvas id="chart-history" height="120"></canvas>
     <div id="history-list" class="history-list"></div>
-  </section>
-
-  <!-- ================= DIAGNOSIS & INTELLIGENCE ================= -->
-  <section id="tab-intelligence" class="tab-panel">
-    <h2 data-i18n="intelligence_title">Diagnosis &amp; Crop Intelligence</h2>
-    <div class="card-grid">
-      <div class="dash-card" style="grid-column: 1 / -1;">
-        <h3 data-i18n="intel_diagnosis_title">🩺 Current Diagnosis</h3>
-        <div id="intel-diagnosis" class="diagnosis-panel" data-i18n="intel_diagnosis_empty">No recent diagnosis available. Analyze a crop to see the full diagnosis here.</div>
-      </div>
-      <div class="dash-card">
-        <h3 data-i18n="intel_learn_title">Learn More</h3>
-        <div id="intel-links" data-i18n="intel_learn_empty">Analyze a crop to get educational links.</div>
-      </div>
-    </div>
   </section>
 
   <!-- ================= SETTINGS ================= -->
   <section id="tab-settings" class="tab-panel">
-    <h2 data-i18n="settings_title">Settings</h2>
-    <div class="settings-row">
-      <label class="field-label" data-i18n="settings_language">Language</label>
-      <select id="lang-select">
-        <option value="en">English</option>
-        <option value="te">తెలుగు (Telugu)</option>
-        <option value="hi">हिंदी (Hindi)</option>
-      </select>
-    </div>
+    <section class="block">
+      <h2>Settings</h2>
+      <div class="settings-row">
+        <label for="api-url-input">Backend API URL</label>
+        <input type="text" id="api-url-input">
+        <div style="margin-top:10px;">
+          <button class="btn btn-secondary" id="btn-save-api">Save & test connection</button>
+        </div>
+        <div id="api-status"></div>
+      </div>
+    </section>
   </section>
 
 </main>
 
 <footer>
-  <p data-i18n="footer_text">Crop Doctor — AI-powered crop disease diagnosis.</p>
+  Crop Doctor — AI-assisted crop disease diagnosis. Results are not a substitute for professional agricultural advice.
 </footer>
 
 <script>
 /* ==========================================================================
    Crop Doctor — Frontend logic
-   Talks to the Flask backend (app.py) for real MobileNetV2 inference and
-   Neon-backed history. Falls back to browser localStorage for history if
+   Talks to the Flask backend for MobileNetV2 (39-class) inference and
+   optional Neon-backed history. Falls back to localStorage for history if
    the backend/database isn't reachable. Never fabricates a diagnosis.
    ========================================================================== */
 
@@ -367,186 +309,10 @@ const DEFAULT_API_URL = "https://cropdoctorwebsite.onrender.com";
 
 const state = {
   apiUrl: localStorage.getItem("cd_api_url") || DEFAULT_API_URL,
-  lang: localStorage.getItem("cd_lang") || "en",
-  selectedCrop: null,
   selectedFile: null,
   lastResult: null,
   history: [],
 };
-
-/* Only the crops the trained model actually supports are shown. */
-const ALL_CROPS = [
-  { id: "apple",  emoji: "🍎", key: "crop_apple" },
-  { id: "maize",  emoji: "🌽", key: "crop_corn" },
-  { id: "grape",  emoji: "🍇", key: "crop_grape" },
-  { id: "pepper", emoji: "🌶️", key: "crop_pepper" },
-  { id: "potato", emoji: "🥔", key: "crop_potato" },
-  { id: "tomato", emoji: "🍅", key: "crop_tomato" },
-  { id: "wheat",  emoji: "🌾", key: "crop_wheat" },
-  { id: "rice",   emoji: "🌾", key: "crop_rice" },
-];
-
-/* ---------------------------- Translations ---------------------------- */
-const TRANSLATIONS = {
-  en: {
-    nav_dashboard: "Dashboard", nav_analyze: "Analyze Crop", nav_assistant: "AI Assistant",
-    nav_history: "History", nav_intelligence: "Diagnosis & Intelligence", nav_settings: "Settings",
-    hero_sub: "Your AI Crop Health Assistant",
-    hero_analyze_btn: "📷 Analyze a Crop", hero_ask_ai: "💬 Ask AI", hero_history: "🕘 View History",
-    hero_intelligence: "🩺 Diagnosis",
-    dash_latest_title: "Latest Analysis", dash_latest_empty: "No analysis yet. Analyze a crop to get started.",
-    dash_health_title: "Crop Health", dash_assistant_title: "AI Assistant",
-    dash_assistant_desc: "Ask questions about any diagnosis in plain language.",
-    dash_assistant_btn: "Open Assistant", dash_history_title: "Analysis History", dash_history_view: "View All",
-    analyze_title: "Analyze Crop", step1_label: "1. Select your crop", step2_label: "2. Upload a photo of the leaf",
-    upload_tap: "Tap to upload", upload_or: "or drag and drop an image",
-    upload_hint: "JPG or PNG, clear photo of a single leaf works best",
-    choose_photo: "Choose Photo", use_camera: "Use Camera", analyze_btn: "Analyze", analyzing: "Running AI analysis…",
-    assistant_title: "Crop Doctor AI Assistant",
-    assistant_desc: "Ask about your latest diagnosis, symptoms, prevention, or general crop health.",
-    assistant_seed: "Hi! Analyze a crop first, then ask me things like \"why did this happen?\" or \"how do I prevent it?\"",
-    chat_placeholder: "Type your question…", chat_send: "Send",
-    voice_fallback: "Voice input/output isn't supported in this browser — you can still type your questions.",
-    history_title: "Analysis History", history_clear: "Clear All", history_empty: "No analyses yet.",
-    intelligence_title: "Diagnosis & Crop Intelligence", intel_diagnosis_title: "🩺 Current Diagnosis",
-    intel_diagnosis_empty: "No recent diagnosis available. Analyze a crop to see the full diagnosis here.",
-    intel_learn_title: "Learn More", intel_learn_empty: "Analyze a crop to get educational links.",
-    settings_title: "Settings", settings_language: "Language",
-    footer_text: "Crop Doctor — AI-powered crop disease diagnosis.",
-    crop_apple: "Apple", crop_corn: "Corn (Maize)", crop_grape: "Grape", crop_pepper: "Pepper (Bell)",
-    crop_potato: "Potato", crop_tomato: "Tomato", crop_wheat: "Wheat", crop_rice: "Rice",
-    result_symptoms: "Main Symptoms", result_actions: "Recommended Actions", result_prevention: "Prevention",
-    result_learn_more: "Learn More", result_ask_ai: "Ask AI About This",
-    confidence_word: "confidence", severity_word: "Severity", healthy_word: "Healthy",
-    crop_mismatch_title: "Image does not appear to match the selected crop.",
-    crop_mismatch_body: "Please upload a photo that actually shows the crop you selected.",
-    crop_not_supported_title: "This crop isn't supported by the trained model yet.",
-    crop_not_supported_body: "Currently supported crops: Apple, Corn, Grape, Pepper, Potato, Tomato, Wheat, Rice.",
-    image_unreadable: "That image couldn't be read. Please try a clearer photo.",
-    model_unavailable_title: "AI model is being connected.", model_unavailable_body: "Please try again shortly.",
-    generic_error: "Something went wrong. Please try again.",
-    fetch_error: "Couldn't reach the AI service. Check your internet connection, or set the correct Backend API URL in Settings.",
-    diag_wiki_crop: "on Wikipedia ↗", diag_wiki_disease: "on Wikipedia ↗",
-  },
-  te: {
-    nav_dashboard: "డాష్‌బోర్డ్", nav_analyze: "పంటను పరిశీలించండి", nav_assistant: "AI సహాయకుడు",
-    nav_history: "చరిత్ర", nav_intelligence: "నిర్ధారణ & సమాచారం", nav_settings: "సెట్టింగ్‌లు",
-    hero_sub: "మీ AI పంట ఆరోగ్య సహాయకుడు",
-    hero_analyze_btn: "📷 పంటను పరిశీలించండి", hero_ask_ai: "💬 AI ని అడగండి", hero_history: "🕘 చరిత్ర చూడండి",
-    hero_intelligence: "🩺 నిర్ధారణ",
-    dash_latest_title: "తాజా విశ్లేషణ", dash_latest_empty: "ఇంకా విశ్లేషణ లేదు. ప్రారంభించడానికి పంటను పరిశీలించండి.",
-    dash_health_title: "పంట ఆరోగ్యం", dash_assistant_title: "AI సహాయకుడు",
-    dash_assistant_desc: "ఏదైనా నిర్ధారణ గురించి సాధారణ భాషలో ప్రశ్నలు అడగండి.",
-    dash_assistant_btn: "సహాయకుడిని తెరవండి", dash_history_title: "విశ్లేషణ చరిత్ర", dash_history_view: "అన్నీ చూడండి",
-    analyze_title: "పంటను పరిశీలించండి", step1_label: "1. మీ పంటను ఎంచుకోండి", step2_label: "2. ఆకు ఫోటోను అప్‌లోడ్ చేయండి",
-    upload_tap: "అప్‌లోడ్ చేయడానికి నొక్కండి", upload_or: "లేదా చిత్రాన్ని లాగి వదలండి",
-    upload_hint: "JPG లేదా PNG, ఒకే ఆకు యొక్క స్పష్టమైన ఫోటో ఉత్తమం",
-    choose_photo: "ఫోటో ఎంచుకోండి", use_camera: "కెమెరా వాడండి", analyze_btn: "పరిశీలించండి",
-    analyzing: "AI విశ్లేషణ జరుగుతోంది…",
-    assistant_title: "క్రాప్ డాక్టర్ AI సహాయకుడు",
-    assistant_desc: "మీ తాజా నిర్ధారణ, లక్షణాలు, నివారణ లేదా సాధారణ పంట ఆరోగ్యం గురించి అడగండి.",
-    assistant_seed: "హాయ్! ముందుగా ఒక పంటను పరిశీలించండి, తర్వాత \"ఇది ఎందుకు జరిగింది?\" లేదా \"దీన్ని ఎలా నివారించాలి?\" అని అడగండి.",
-    chat_placeholder: "మీ ప్రశ్నను టైప్ చేయండి…", chat_send: "పంపండి",
-    voice_fallback: "ఈ బ్రౌజర్‌లో వాయిస్ మద్దతు లేదు — మీరు టైప్ చేసి ప్రశ్నలు అడగవచ్చు.",
-    history_title: "విశ్లేషణ చరిత్ర", history_clear: "అన్నీ తొలగించండి", history_empty: "ఇంకా విశ్లేషణలు లేవు.",
-    intelligence_title: "నిర్ధారణ & పంట సమాచారం", intel_diagnosis_title: "🩺 ప్రస్తుత నిర్ధారణ",
-    intel_diagnosis_empty: "ఇటీవలి నిర్ధారణ ఏదీ లేదు. పూర్తి నిర్ధారణ చూడటానికి పంటను పరిశీలించండి.",
-    intel_learn_title: "మరింత తెలుసుకోండి", intel_learn_empty: "విద్యా లింక్‌ల కోసం పంటను పరిశీలించండి.",
-    settings_title: "సెట్టింగ్‌లు", settings_language: "భాష",
-    footer_text: "క్రాప్ డాక్టర్ — AI ఆధారిత పంట వ్యాధి నిర్ధారణ.",
-    crop_apple: "ఆపిల్", crop_corn: "మొక్కజొన్న", crop_grape: "ద్రాక్ష", crop_pepper: "మిరపకాయ",
-    crop_potato: "బంగాళదుంప", crop_tomato: "టమాటా", crop_wheat: "గోధుమ", crop_rice: "వరి",
-    result_symptoms: "ప్రధాన లక్షణాలు", result_actions: "సిఫార్సు చేసిన చర్యలు", result_prevention: "నివారణ",
-    result_learn_more: "మరింత తెలుసుకోండి", result_ask_ai: "దీని గురించి AI ని అడగండి",
-    confidence_word: "నమ్మకం", severity_word: "తీవ్రత", healthy_word: "ఆరోగ్యంగా ఉంది",
-    crop_mismatch_title: "చిత్రం ఎంచుకున్న పంటకు సరిపోలడం లేదు.",
-    crop_mismatch_body: "దయచేసి మీరు ఎంచుకున్న పంటను చూపే ఫోటోను అప్‌లోడ్ చేయండి.",
-    crop_not_supported_title: "ఈ పంటకు ఇంకా మోడల్ మద్దతు లేదు.",
-    crop_not_supported_body: "ప్రస్తుతం మద్దతు ఉన్న పంటలు: ఆపిల్, మొక్కజొన్న, ద్రాక్ష, మిరపకాయ, బంగాళదుంప, టమాటా, గోధుమ, వరి.",
-    image_unreadable: "ఆ చిత్రాన్ని చదవలేకపోయాము. దయచేసి స్పష్టమైన ఫోటో ప్రయత్నించండి.",
-    model_unavailable_title: "AI మోడల్ కనెక్ట్ అవుతోంది.", model_unavailable_body: "దయచేసి కొద్ది సేపటిలో మళ్ళీ ప్రయత్నించండి.",
-    generic_error: "ఏదో తప్పు జరిగింది. దయచేసి మళ్ళీ ప్రయత్నించండి.",
-    fetch_error: "AI సేవను చేరుకోలేకపోయాము. మీ ఇంటర్నెట్ కనెక్షన్‌ను తనిఖీ చేయండి లేదా సెట్టింగ్‌లలో సరైన బ్యాకెండ్ API URL సెట్ చేయండి.",
-    diag_wiki_crop: "వికీపీడియాలో ↗", diag_wiki_disease: "వికీపీడియాలో ↗",
-  },
-  hi: {
-    nav_dashboard: "डैशबोर्ड", nav_analyze: "फसल जांचें", nav_assistant: "AI सहायक",
-    nav_history: "इतिहास", nav_intelligence: "निदान और जानकारी", nav_settings: "सेटिंग्स",
-    hero_sub: "आपका AI फसल स्वास्थ्य सहायक",
-    hero_analyze_btn: "📷 फसल जांचें", hero_ask_ai: "💬 AI से पूछें", hero_history: "🕘 इतिहास देखें",
-    hero_intelligence: "🩺 निदान",
-    dash_latest_title: "नवीनतम विश्लेषण", dash_latest_empty: "अभी तक कोई विश्लेषण नहीं। शुरू करने के लिए फसल जांचें।",
-    dash_health_title: "फसल स्वास्थ्य", dash_assistant_title: "AI सहायक",
-    dash_assistant_desc: "किसी भी निदान के बारे में सरल भाषा में सवाल पूछें।",
-    dash_assistant_btn: "सहायक खोलें", dash_history_title: "विश्लेषण इतिहास", dash_history_view: "सभी देखें",
-    analyze_title: "फसल जांचें", step1_label: "1. अपनी फसल चुनें", step2_label: "2. पत्ती की फोटो अपलोड करें",
-    upload_tap: "अपलोड करने के लिए टैप करें", upload_or: "या इमेज खींचकर छोड़ें",
-    upload_hint: "JPG या PNG, एक पत्ती की स्पष्ट फोटो सबसे अच्छी रहती है",
-    choose_photo: "फोटो चुनें", use_camera: "कैमरा उपयोग करें", analyze_btn: "जांचें",
-    analyzing: "AI विश्लेषण चल रहा है…",
-    assistant_title: "क्रॉप डॉक्टर AI सहायक",
-    assistant_desc: "अपने नवीनतम निदान, लक्षणों, रोकथाम या सामान्य फसल स्वास्थ्य के बारे में पूछें।",
-    assistant_seed: "नमस्ते! पहले एक फसल जांचें, फिर मुझसे पूछें जैसे \"यह क्यों हुआ?\" या \"इसे कैसे रोकें?\"",
-    chat_placeholder: "अपना सवाल टाइप करें…", chat_send: "भेजें",
-    voice_fallback: "इस ब्राउज़र में वॉइस सपोर्ट नहीं है — आप टाइप करके सवाल पूछ सकते हैं।",
-    history_title: "विश्लेषण इतिहास", history_clear: "सभी हटाएं", history_empty: "अभी तक कोई विश्लेषण नहीं।",
-    intelligence_title: "निदान और फसल जानकारी", intel_diagnosis_title: "🩺 वर्तमान निदान",
-    intel_diagnosis_empty: "हाल ही में कोई निदान उपलब्ध नहीं है। पूरा निदान देखने के लिए फसल जांचें।",
-    intel_learn_title: "और जानें", intel_learn_empty: "शैक्षणिक लिंक के लिए फसल जांचें।",
-    settings_title: "सेटिंग्स", settings_language: "भाषा",
-    footer_text: "क्रॉप डॉक्टर — AI-संचालित फसल रोग निदान।",
-    crop_apple: "सेब", crop_corn: "मक्का", crop_grape: "अंगूर", crop_pepper: "शिमला मिर्च",
-    crop_potato: "आलू", crop_tomato: "टमाटर", crop_wheat: "गेहूं", crop_rice: "चावल",
-    result_symptoms: "मुख्य लक्षण", result_actions: "अनुशंसित कार्य", result_prevention: "रोकथाम",
-    result_learn_more: "और जानें", result_ask_ai: "इसके बारे में AI से पूछें",
-    confidence_word: "विश्वास", severity_word: "गंभीरता", healthy_word: "स्वस्थ",
-    crop_mismatch_title: "छवि चयनित फसल से मेल नहीं खाती।",
-    crop_mismatch_body: "कृपया वह फोटो अपलोड करें जो आपकी चुनी हुई फसल को दिखाती हो।",
-    crop_not_supported_title: "इस फसल के लिए मॉडल अभी उपलब्ध नहीं है।",
-    crop_not_supported_body: "फिलहाल समर्थित फसलें: सेब, मक्का, अंगूर, शिमला मिर्च, आलू, टमाटर, गेहूं, चावल।",
-    image_unreadable: "वह छवि पढ़ी नहीं जा सकी। कृपया एक स्पष्ट फोटो आज़माएं।",
-    model_unavailable_title: "AI मॉडल कनेक्ट हो रहा है।", model_unavailable_body: "कृपया थोड़ी देर बाद फिर कोशिश करें।",
-    generic_error: "कुछ गलत हो गया। कृपया फिर कोशिश करें।",
-    fetch_error: "AI सेवा तक नहीं पहुंच सके। अपना इंटरनेट कनेक्शन जांचें, या सेटिंग्स में सही बैकएंड API URL सेट करें।",
-    diag_wiki_crop: "विकिपीडिया पर ↗", diag_wiki_disease: "विकिपीडिया पर ↗",
-  },
-};
-
-function t(key) {
-  return (TRANSLATIONS[state.lang] && TRANSLATIONS[state.lang][key]) || TRANSLATIONS.en[key] || key;
-}
-
-function applyTranslations() {
-  document.documentElement.lang = state.lang;
-  document.querySelectorAll("[data-i18n]").forEach(el => {
-    el.textContent = t(el.getAttribute("data-i18n"));
-  });
-  document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
-    el.setAttribute("placeholder", t(el.getAttribute("data-i18n-placeholder")));
-  });
-  renderCropGrid();
-  if (!state.history.length) {
-    document.getElementById("dash-latest").textContent = t("dash_latest_empty");
-  }
-  if (!state.lastResult) {
-    document.getElementById("intel-diagnosis").textContent = t("intel_diagnosis_empty");
-    document.getElementById("intel-links").textContent = t("intel_learn_empty");
-  } else {
-    updateIntelligence(state.lastResult);
-  }
-  renderHistory();
-  updateDashboard();
-  if (state.lastResult) renderResult(state.lastResult);
-}
-
-function setLanguage(lang) {
-  state.lang = lang;
-  localStorage.setItem("cd_lang", lang);
-  document.getElementById("lang-select").value = lang;
-  applyTranslations();
-}
-
-document.getElementById("lang-select").addEventListener("change", e => setLanguage(e.target.value));
 
 /* ---------------------------- Navigation ---------------------------- */
 function goto(tabName) {
@@ -557,35 +323,11 @@ function goto(tabName) {
   if (tabBtn) tabBtn.classList.add("active");
   document.getElementById("nav-tabs").classList.remove("open");
 }
-
-document.querySelectorAll(".tab").forEach(btn => {
-  btn.addEventListener("click", () => goto(btn.dataset.tab));
-});
-document.querySelectorAll("[data-goto]").forEach(btn => {
-  btn.addEventListener("click", () => goto(btn.dataset.goto));
-});
+document.querySelectorAll(".tab").forEach(btn => btn.addEventListener("click", () => goto(btn.dataset.tab)));
+document.querySelectorAll("[data-goto]").forEach(btn => btn.addEventListener("click", () => goto(btn.dataset.goto)));
 document.getElementById("menu-toggle").addEventListener("click", () => {
   document.getElementById("nav-tabs").classList.toggle("open");
 });
-
-/* ---------------------------- Crop selection ---------------------------- */
-function renderCropGrid() {
-  const grid = document.getElementById("crop-grid");
-  const prevSelected = state.selectedCrop;
-  grid.innerHTML = "";
-  ALL_CROPS.forEach(crop => {
-    const tile = document.createElement("div");
-    tile.className = "crop-tile" + (crop.id === prevSelected ? " selected" : "");
-    tile.innerHTML = `<span class="emoji">${crop.emoji}</span>${t(crop.key)}`;
-    tile.addEventListener("click", () => {
-      document.querySelectorAll(".crop-tile").forEach(el => el.classList.remove("selected"));
-      tile.classList.add("selected");
-      state.selectedCrop = crop.id;
-      updateAnalyzeButton();
-    });
-    grid.appendChild(tile);
-  });
-}
 
 /* ---------------------------- Image upload ---------------------------- */
 const uploadArea = document.getElementById("upload-area");
@@ -593,39 +335,22 @@ const fileInput = document.getElementById("file-input");
 const previewImg = document.getElementById("preview-img");
 const uploadPlaceholder = document.getElementById("upload-placeholder");
 
-document.getElementById("btn-choose-file").addEventListener("click", (e) => {
-  e.stopPropagation();
-  fileInput.click();
-});
-document.getElementById("btn-camera").addEventListener("click", (e) => {
+document.getElementById("btn-choose-file").addEventListener("click", e => { e.stopPropagation(); fileInput.click(); });
+document.getElementById("btn-camera").addEventListener("click", e => {
   e.stopPropagation();
   fileInput.setAttribute("capture", "environment");
   fileInput.click();
 });
 uploadArea.addEventListener("click", () => fileInput.click());
-fileInput.addEventListener("change", () => {
-  if (fileInput.files && fileInput.files[0]) handleFile(fileInput.files[0]);
-});
+fileInput.addEventListener("change", () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
 
-["dragover", "dragenter"].forEach(evt =>
-  uploadArea.addEventListener(evt, e => { e.preventDefault(); uploadArea.classList.add("dragover"); })
-);
-["dragleave", "drop"].forEach(evt =>
-  uploadArea.addEventListener(evt, e => { e.preventDefault(); uploadArea.classList.remove("dragover"); })
-);
-uploadArea.addEventListener("drop", e => {
-  if (e.dataTransfer.files && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
-});
+["dragover", "dragenter"].forEach(evt => uploadArea.addEventListener(evt, e => { e.preventDefault(); uploadArea.classList.add("dragover"); }));
+["dragleave", "drop"].forEach(evt => uploadArea.addEventListener(evt, e => { e.preventDefault(); uploadArea.classList.remove("dragover"); }));
+uploadArea.addEventListener("drop", e => { if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
 
 function handleFile(file) {
-  if (!file.type.startsWith("image/")) {
-    alert("Please choose an image file.");
-    return;
-  }
-  if (file.size > 12 * 1024 * 1024) {
-    alert("That image is too large. Please choose a photo under 12MB.");
-    return;
-  }
+  if (!file.type.startsWith("image/")) { alert("Please choose an image file."); return; }
+  if (file.size > 12 * 1024 * 1024) { alert("That image is too large. Please choose a photo under 12MB."); return; }
   state.selectedFile = file;
   const reader = new FileReader();
   reader.onload = () => {
@@ -634,11 +359,7 @@ function handleFile(file) {
     uploadPlaceholder.hidden = true;
   };
   reader.readAsDataURL(file);
-  updateAnalyzeButton();
-}
-
-function updateAnalyzeButton() {
-  document.getElementById("btn-analyze").disabled = !(state.selectedCrop && state.selectedFile);
+  document.getElementById("btn-analyze").disabled = false;
 }
 
 /* ---------------------------- Analyze ---------------------------- */
@@ -653,7 +374,6 @@ async function runAnalysis() {
   resultBox.innerHTML = "";
 
   const formData = new FormData();
-  formData.append("crop", state.selectedCrop);
   formData.append("image", state.selectedFile);
 
   try {
@@ -665,82 +385,69 @@ async function runAnalysis() {
       state.lastResult = data;
       await saveHistoryRecord(data);
       updateDashboard();
-      updateIntelligence(data);
     }
   } catch (err) {
     loading.hidden = true;
-    resultBox.innerHTML = `<div class="error-box">${t("fetch_error")}</div>`;
+    resultBox.innerHTML = `<div class="error-box"><strong>Couldn't reach the diagnosis service.</strong><br>
+      Check your internet connection, or the Backend API URL in Settings.</div>`;
   }
+}
+
+function severityPillClass(severity) {
+  if (severity === "Healthy") return "healthy";
+  if (severity === "High attention") return "high";
+  return "monitor"; // Monitor / Attention recommended
 }
 
 function renderResult(data) {
   const box = document.getElementById("analysis-result");
 
-  if (data.status === "crop_mismatch") {
-    box.innerHTML = `<div class="notice-box">
-      <strong>${t("crop_mismatch_title")}</strong><br>
-      ${t("crop_mismatch_body")}
-    </div>`;
-    return;
-  }
-  if (data.status === "crop_not_supported") {
-    box.innerHTML = `<div class="notice-box">
-      <strong>${t("crop_not_supported_title")}</strong><br>
-      ${t("crop_not_supported_body")}
-    </div>`;
-    return;
-  }
   if (data.status === "image_unreadable") {
-    box.innerHTML = `<div class="error-box">${t("image_unreadable")}</div>`;
+    box.innerHTML = `<div class="error-box">That image couldn't be read. Please try a clearer photo.</div>`;
     return;
   }
   if (data.status === "model_unavailable") {
-    box.innerHTML = `<div class="error-box"><strong>${t("model_unavailable_title")}</strong><br>${t("model_unavailable_body")}</div>`;
+    box.innerHTML = `<div class="error-box"><strong>Diagnosis model is temporarily unavailable.</strong><br>Please try again shortly.</div>`;
     return;
   }
   if (data.status !== "success") {
-    box.innerHTML = `<div class="error-box">${t("generic_error")}</div>`;
+    box.innerHTML = `<div class="error-box">${data.message || "Something went wrong. Please try again."}</div>`;
     return;
   }
 
-  const pillClass = data.is_healthy ? "healthy" : (data.confidence_tier === "low" ? "warn" : "diseased");
-  const pillText = data.is_healthy ? t("healthy_word") : data.disease;
+  const title = data.is_healthy ? `${data.crop} — Healthy` : `${data.crop} — ${data.condition}`;
+  const listSection = (title, items) => items && items.length
+    ? `<div class="result-section"><h4>${title}</h4><ul>${items.map(s => `<li>${s}</li>`).join("")}</ul></div>` : "";
 
   box.innerHTML = `
     <div class="result-card">
-      <div class="result-header">
+      <div class="result-top">
         <div>
-          <h3 style="margin:0">${capitalize(data.crop)}</h3>
-          <span class="status-pill ${pillClass}">${pillText}</span>
+          <div class="result-crop">${data.crop}</div>
+          <h3 class="result-title">${data.is_healthy ? "Healthy" : data.condition}</h3>
+          <span class="pill ${severityPillClass(data.severity)}">${data.severity}</span>
         </div>
-        <div style="text-align:right">
-          <div><strong>${data.confidence}%</strong> ${t("confidence_word")}</div>
-          <div class="muted">${t("severity_word")}: ${data.severity}</div>
+        <div class="confidence-block">
+          <div class="confidence-num">${data.confidence}%</div>
+          <div class="muted" style="font-size:0.82rem;">confidence</div>
+          <div class="confidence-track"><div class="confidence-fill" style="width:${data.confidence}%"></div></div>
         </div>
       </div>
-      <div class="confidence-bar-track"><div class="confidence-bar-fill" style="width:${data.confidence}%"></div></div>
+
+      <p class="result-explanation">${data.explanation}</p>
 
       ${data.warning ? `<div class="notice-box">${data.warning}</div>` : ""}
 
-      <div class="result-section">
-        <h4>${t("result_symptoms")}</h4>
-        <ul>${data.symptoms.map(s => `<li>${s}</li>`).join("")}</ul>
+      ${data.cause ? `<div class="result-section"><h4>Possible cause</h4><p>${data.cause}</p></div>` : ""}
+      ${listSection("Symptoms to look for", data.symptoms)}
+      ${listSection("Recommended action", data.action)}
+      ${listSection("Prevention", data.prevention)}
+
+      <div class="result-section" style="border-top:none; padding-top:0; margin-top:16px;">
+        <button class="btn btn-secondary" id="btn-ask-ai">Ask the assistant about this</button>
       </div>
-      <div class="result-section">
-        <h4>${t("result_actions")}</h4>
-        <ul>${data.recommendations.map(s => `<li>${s}</li>`).join("")}</ul>
-      </div>
-      <div class="result-section">
-        <h4>${t("result_prevention")}</h4>
-        <ul>${data.prevention.map(s => `<li>${s}</li>`).join("")}</ul>
-      </div>
-      <div class="result-section learn-links">
-        <h4>${t("result_learn_more")}</h4>
-        ${learnMoreLinks(data.crop, data.disease)}
-      </div>
-      <div class="result-section">
-        <button class="btn btn-secondary" data-goto="assistant" id="btn-ask-ai">${t("result_ask_ai")}</button>
-      </div>
+
+      <div class="disclaimer">${data.disclaimer || "This is an AI-assisted assessment, not a guaranteed laboratory diagnosis."}</div>
     </div>
   `;
   document.getElementById("btn-ask-ai").addEventListener("click", () => {
@@ -749,20 +456,11 @@ function renderResult(data) {
   });
 }
 
-function learnMoreLinks(crop, disease) {
-  const cropWiki = `https://en.wikipedia.org/wiki/${encodeURIComponent(capitalize(crop))}`;
-  const diseaseWiki = `https://en.wikipedia.org/wiki/${encodeURIComponent(disease.replace(/\s+/g, "_"))}`;
-  return `<a href="${cropWiki}" target="_blank" rel="noopener">${capitalize(crop)} ${t("diag_wiki_crop")}</a>
-          <a href="${diseaseWiki}" target="_blank" rel="noopener">${disease} ${t("diag_wiki_disease")}</a>`;
-}
-
-function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
-
-/* ---------------------------- History (backend + localStorage fallback) ---------------------------- */
+/* ---------------------------- History ---------------------------- */
 async function saveHistoryRecord(data) {
   const record = {
     crop: data.crop,
-    disease: data.disease,
+    condition: data.is_healthy ? "Healthy" : data.condition,
     confidence: data.confidence,
     severity: data.severity,
     status: data.status,
@@ -778,6 +476,7 @@ async function saveHistoryRecord(data) {
   } catch {
     record.id = "local-" + Date.now();
     record.created_at = new Date().toISOString();
+    record.disease = record.condition;
     state.history.unshift(record);
     persistLocalHistory();
   }
@@ -802,28 +501,23 @@ async function loadHistory() {
 function renderHistory() {
   const list = document.getElementById("history-list");
   if (!state.history.length) {
-    list.innerHTML = `<p class="muted">${t("history_empty")}</p>`;
+    list.innerHTML = `<p class="muted">No analyses yet.</p>`;
   } else {
     list.innerHTML = state.history.map(h => `
       <div class="history-item">
         <div>
-          <strong>${capitalize(h.crop)} — ${h.disease}</strong>
-          <div class="meta">${new Date(h.created_at).toLocaleString()} · ${h.confidence}% ${t("confidence_word")} · ${t("severity_word")}: ${h.severity}</div>
+          <strong>${h.crop} — ${h.disease}</strong>
+          <div class="meta">${new Date(h.created_at).toLocaleString()} · ${h.confidence}% confidence · ${h.severity}</div>
         </div>
-        <button data-id="${h.id}" class="btn-delete-history">✕</button>
+        <button data-id="${h.id}" class="btn btn-text btn-delete-history">Delete</button>
       </div>
     `).join("");
-    list.querySelectorAll(".btn-delete-history").forEach(b => {
-      b.addEventListener("click", () => deleteHistoryItem(b.dataset.id));
-    });
+    list.querySelectorAll(".btn-delete-history").forEach(b => b.addEventListener("click", () => deleteHistoryItem(b.dataset.id)));
   }
-  renderHistoryChart();
 }
 
 async function deleteHistoryItem(id) {
-  try {
-    await fetch(`${state.apiUrl}/api/history/${id}`, { method: "DELETE" });
-  } catch { /* fall through to local removal */ }
+  try { await fetch(`${state.apiUrl}/api/history/${id}`, { method: "DELETE" }); } catch {}
   state.history = state.history.filter(h => String(h.id) !== String(id));
   persistLocalHistory();
   renderHistory();
@@ -832,9 +526,7 @@ async function deleteHistoryItem(id) {
 
 document.getElementById("btn-clear-history").addEventListener("click", async () => {
   if (!confirm("Clear all analysis history?")) return;
-  try {
-    await fetch(`${state.apiUrl}/api/history`, { method: "DELETE" });
-  } catch { /* ignore */ }
+  try { await fetch(`${state.apiUrl}/api/history`, { method: "DELETE" }); } catch {}
   state.history = [];
   localStorage.removeItem("cd_history_fallback");
   renderHistory();
@@ -842,87 +534,18 @@ document.getElementById("btn-clear-history").addEventListener("click", async () 
 });
 
 /* ---------------------------- Dashboard ---------------------------- */
-let confidenceChart, historyChart;
-
 function updateDashboard() {
   const latestBox = document.getElementById("dash-latest");
   if (state.history.length) {
     const h = state.history[0];
-    latestBox.innerHTML = `<strong>${capitalize(h.crop)} — ${h.disease}</strong><br>
-      <span class="muted">${h.confidence}% ${t("confidence_word")} · ${t("severity_word")}: ${h.severity}</span>`;
+    latestBox.innerHTML = `${h.crop} — ${h.disease} <span class="muted">(${h.confidence}%)</span>`;
   } else {
-    latestBox.textContent = t("dash_latest_empty");
+    latestBox.textContent = "No analysis yet";
   }
-  document.getElementById("dash-history-count").textContent = `${state.history.length} analyses saved`;
-  renderConfidenceChart();
+  document.getElementById("dash-history-count").textContent = state.history.length;
 }
 
-function renderConfidenceChart() {
-  if (typeof Chart === "undefined") return;
-  const ctx = document.getElementById("chart-confidence");
-  const h = state.history[0];
-  const healthy = h ? (h.disease.toLowerCase() === "healthy" ? h.confidence : 100 - h.confidence) : 50;
-  const disease = 100 - healthy;
-  if (confidenceChart) confidenceChart.destroy();
-  confidenceChart = new Chart(ctx, {
-    type: "doughnut",
-    data: {
-      labels: ["Healthy probability", "Disease probability"],
-      datasets: [{ data: [healthy, disease], backgroundColor: ["#2E7D4F", "#c0392b"] }],
-    },
-    options: { plugins: { legend: { position: "bottom" } } },
-  });
-}
-
-function renderHistoryChart() {
-  if (typeof Chart === "undefined") return;
-  const ctx = document.getElementById("chart-history");
-  if (!ctx) return;
-  const recent = [...state.history].reverse().slice(-15);
-  if (historyChart) historyChart.destroy();
-  historyChart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: recent.map(h => new Date(h.created_at).toLocaleDateString()),
-      datasets: [{
-        label: "Confidence over time",
-        data: recent.map(h => h.confidence),
-        borderColor: "#2E7D4F",
-        backgroundColor: "rgba(46,125,79,0.15)",
-        tension: 0.3,
-        fill: true,
-      }],
-    },
-    options: { scales: { y: { min: 0, max: 100 } } },
-  });
-}
-
-/* ---------------------------- Diagnosis / Crop Intelligence ---------------------------- */
-function updateIntelligence(data) {
-  const pillClass = data.is_healthy ? "healthy" : (data.confidence_tier === "low" ? "warn" : "diseased");
-  const pillText = data.is_healthy ? t("healthy_word") : data.disease;
-  document.getElementById("intel-diagnosis").innerHTML = `
-    <div class="result-header">
-      <div>
-        <strong>${capitalize(data.crop)}</strong>
-        <span class="status-pill ${pillClass}">${pillText}</span>
-      </div>
-      <div style="text-align:right">
-        <div><strong>${data.confidence}%</strong> ${t("confidence_word")}</div>
-        <div class="muted">${t("severity_word")}: ${data.severity}</div>
-      </div>
-    </div>
-    <h4>${t("result_symptoms")}</h4>
-    <ul>${data.symptoms.map(s => `<li>${s}</li>`).join("")}</ul>
-    <h4>${t("result_actions")}</h4>
-    <ul>${data.recommendations.map(s => `<li>${s}</li>`).join("")}</ul>
-    <h4>${t("result_prevention")}</h4>
-    <ul>${data.prevention.map(s => `<li>${s}</li>`).join("")}</ul>
-  `;
-  document.getElementById("intel-links").innerHTML = learnMoreLinks(data.crop, data.disease);
-}
-
-/* ---------------------------- AI Assistant (Groq via backend, browser Web Speech) ---------------------------- */
+/* ---------------------------- Assistant ---------------------------- */
 const chatBox = document.getElementById("chat-box");
 let diagnosisContext = null;
 
@@ -936,8 +559,8 @@ function addChatMsg(role, text) {
 
 function seedAssistantWithDiagnosis(data) {
   diagnosisContext = data;
-  const label = data.is_healthy ? t("healthy_word") : data.disease;
-  addChatMsg("bot", `${capitalize(data.crop)} — ${label} (${data.confidence}% ${t("confidence_word")}, ${t("severity_word")}: ${data.severity}).`);
+  const label = data.is_healthy ? "Healthy" : data.condition;
+  addChatMsg("bot", `Here's what I found: ${data.crop} — ${label} (${data.confidence}% confidence, ${data.severity}). Ask me anything about it.`);
 }
 
 document.getElementById("btn-send-chat").addEventListener("click", sendChat);
@@ -954,83 +577,53 @@ async function sendChat() {
     const res = await fetch(`${state.apiUrl}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        question,
-        context: diagnosisContext,
-        lang: state.lang,
-      }),
+      body: JSON.stringify({ question, context: diagnosisContext }),
     });
     const data = await res.json();
     if (data.status === "success") {
       addChatMsg("bot", data.answer);
-      speak(data.answer);
     } else {
       addChatMsg("bot", data.message || offlineAssistantAnswer(question));
     }
   } catch {
-    addChatMsg("bot", t("fetch_error"));
+    addChatMsg("bot", "Couldn't reach the assistant right now. Check your internet connection, or the Backend API URL in Settings.");
   }
 }
 
 function offlineAssistantAnswer(question) {
-  if (!diagnosisContext) {
-    return "Please analyze a crop image first — then I can explain the diagnosis for you.";
-  }
+  if (!diagnosisContext) return "Please run a diagnosis first — then I can explain the result for you.";
   const q = question.toLowerCase();
-  if (q.includes("why")) return `${diagnosisContext.disease} typically develops from environmental conditions like humidity and moisture on the leaf surface. See the Prevention section in your results for how to reduce risk.`;
-  if (q.includes("prevent")) return `Prevention tips: ${diagnosisContext.prevention.join(" ")}`;
-  if (q.includes("symptom")) return `Symptoms to watch for: ${diagnosisContext.symptoms.join(" ")}`;
-  if (q.includes("monitor")) return `Keep checking affected leaves every few days, and watch nearby healthy plants for early symptoms.`;
-  return `Recommended actions: ${diagnosisContext.recommendations.join(" ")}`;
+  if (q.includes("why") || q.includes("cause")) return diagnosisContext.cause || "This appears healthy — no cause to explain.";
+  if (q.includes("prevent")) return `Prevention tips: ${(diagnosisContext.prevention || []).join(" ")}`;
+  if (q.includes("symptom")) return `Symptoms to watch for: ${(diagnosisContext.symptoms || []).join(" ")}`;
+  return `Recommended action: ${(diagnosisContext.action || []).join(" ")}`;
 }
 
-/* ---------- Voice (Web Speech API, with graceful fallback) ---------- */
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognition = null;
-if (SpeechRecognition) {
-  recognition = new SpeechRecognition();
-  recognition.continuous = false;
-  recognition.onresult = e => {
-    document.getElementById("chat-input").value = e.results[0][0].transcript;
-    sendChat();
-  };
-} else {
-  document.getElementById("voice-fallback").hidden = false;
-  document.getElementById("btn-mic").disabled = true;
-}
+/* ---------------------------- Settings ---------------------------- */
+document.getElementById("api-url-input").value = state.apiUrl;
 
-document.getElementById("btn-mic").addEventListener("click", () => {
-  if (recognition) recognition.start();
+document.getElementById("btn-save-api").addEventListener("click", () => {
+  const val = document.getElementById("api-url-input").value.trim().replace(/\/$/, "");
+  state.apiUrl = val;
+  localStorage.setItem("cd_api_url", val);
+  document.getElementById("api-status").textContent = "Saved. Checking connection…";
+  checkApiHealth();
 });
 
-function speak(text) {
-  if (!("speechSynthesis" in window)) return;
-  const utter = new SpeechSynthesisUtterance(text);
-  const stopBtn = document.getElementById("btn-stop-speak");
-  stopBtn.hidden = false;
-  utter.onend = () => { stopBtn.hidden = true; };
-  speechSynthesis.speak(utter);
-}
-document.getElementById("btn-stop-speak").addEventListener("click", () => {
-  speechSynthesis.cancel();
-  document.getElementById("btn-stop-speak").hidden = true;
-});
-
-/* ---------------------------- Backend health (silent, no UI) ---------------------------- */
 async function checkApiHealth() {
+  const statusEl = document.getElementById("api-status");
   try {
-    await fetch(`${state.apiUrl}/api/health`);
+    const res = await fetch(`${state.apiUrl}/api/health`);
+    const data = await res.json();
+    statusEl.textContent = `Connected. Model loaded: ${data.model_loaded ? "yes" : "no"} (${data.num_classes || "?"} classes). Database: ${data.database_connected ? "connected" : "not configured"}.`;
   } catch {
-    /* backend unreachable — analyze/chat/history calls will surface this to the user as needed */
+    statusEl.textContent = "Couldn't reach the backend at that URL.";
   }
 }
 
 /* ---------------------------- Init ---------------------------- */
-document.getElementById("lang-select").value = state.lang;
-applyTranslations();
 checkApiHealth();
 loadHistory();
-
 </script>
 </body>
 </html>
